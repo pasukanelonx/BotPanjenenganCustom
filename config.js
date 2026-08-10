@@ -32,7 +32,7 @@ const VERSION = global.version; // don't edit
 const EMAIL = 'panjenengan@gmail.com';
 const REGION = 'Indonesia';
 const WEBSITE = 'panjenengan.com';
-const DATA_OWNER = ['172138665345260']; // cara ambil owner https://youtu.be/qrRXPCSFvRo?si=KOWdFhrScHN7Ugd4 
+const DATA_OWNER = ['225155104116838@lid']; // cara ambil owner https://youtu.be/qrRXPCSFvRo?si=KOWdFhrScHN7Ugd4 
 
 // Konfiqurasi Chat
 const ANTI_CALL = false; // jika true (setiap yang nelpon pribadi akan di block)
