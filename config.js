@@ -3,10 +3,10 @@
 Script ini **TIDAK BOLEH DIPERJUALBELIKAN** dalam bentuk apa pun!
 
 ╔══════════════════════════════════════════════╗
-║                🛠️ INFORMASI SCRIPT           ║
+║                🛠️ INFORMASI SCRIPT          ║
 ╠══════════════════════════════════════════════╣
 ║ 📦 Version   : 5.3.0
-║ 👨‍💻 Developer  : Azhari Creative              ║
+║ 👨‍💻 Developer  : Mail bin Mail                ║
 ║ 🌐 Website    : https://autoresbot.com       ║
 ║ 💻 GitHub  : github.com/autoresbot/resbot-md ║
 ╚══════════════════════════════════════════════╝
@@ -19,24 +19,24 @@ Script **Autoresbot** resmi menjadi **Open Source** dan dapat digunakan secara g
 import moment from 'moment-timezone';
 
 const CONNECTION = 'pairing'; // qr atau pairing
-const PAIRING_CODE = 'RESBOTMD'; // kode pairing max 8 karakter (opsional)
-const OWNER_NAME = 'Autoresbot';
-const NOMOR_BOT = '628xx'; // 628xx nomor wa - 6285124002201
-const DESTINATION = 'group'; // group , private, both
+const PAIRING_CODE = 'PNJGBOTS'; // kode pairing max 8 karakter (opsional)
+const OWNER_NAME = 'PanjenenganBOT';
+const NOMOR_BOT = '62881012374403'; // 628xx nomor wa - 62881012374403
+const DESTINATION = 'both'; // group , private, both
 const APIKEY = ''; // apikey dari autoresbot.com (paket apikey)
 const RATE_LIMIT = 3000; // 3 detik/chat
 const SIMILARITY = true; // Pencarian kemiripan command (true, false)
 const MODE = 'production'; // [production, development] (jangan di ubah kecuali anda developer)
 const VERSION = global.version; // don't edit
 
-const EMAIL = 'autoresbot@gmail.com';
+const EMAIL = 'panjenengan@gmail.com';
 const REGION = 'Indonesia';
-const WEBSITE = 'autoresbot.com';
-const DATA_OWNER = ['69243815079978']; // cara ambil owner https://youtu.be/qrRXPCSFvRo?si=KOWdFhrScHN7Ugd4 
+const WEBSITE = 'panjenengan.com';
+const DATA_OWNER = ['172138665345260']; // cara ambil owner https://youtu.be/qrRXPCSFvRo?si=KOWdFhrScHN7Ugd4 
 
 // Konfiqurasi Chat
 const ANTI_CALL = false; // jika true (setiap yang nelpon pribadi akan di block)
-const AUTO_READ = false; // jika true (setiap chat akan di baca/centang 2 biru)
+const AUTO_READ = true; // jika true (setiap chat akan di baca/centang 2 biru)
 const AUTO_BACKUP = false; // jika true (setiap restart server, data backup di kirimkan ke wa owner);
 const MIDNIGHT_RESTART = false; // Restart setiap jam 12 malam
 const PRESENCE_UPDATE = ''; // unavailable, available, composing, recording, paused
@@ -47,7 +47,7 @@ const BG_WELCOME2 = 'https://api.autoresbot.com/api/maker/bg-default';
 // Tutor : https://youtu.be/ZAWb7tnKjoM?si=jMUiB13KkXE1H7IG
 const PANEL_URL = '';
 const PANEL_PLTA = '';
-const PANEL_DESCRIPTION = 'Butuh Bantuan Hubungi 628xxxxx';
+const PANEL_DESCRIPTION = 'Butuh Bantuan Hubungi 6289654123485';
 const PANEL_ID_EGG = 15;
 const PANEL_ID_LOCATION = 1;
 const PANEL_DEFAULT_DISK = 5120; // 5GB atau 0 (unlimited)
@@ -84,7 +84,7 @@ const config = {
   sticker_packname: OWNER_NAME,
   sticker_author: `Date: ${moment
     .tz('Asia/Jakarta')
-    .format('DD/MM/YY')}\nYouTube: Azhari Creative\nOwner: 0852-4615-4386`,
+    .format('DD/MM/YY')}\nYouTube: Mail bin Mail\nOwner: 0896-5412-3485`,
   mode: MODE,
   commandSimilarity: SIMILARITY,
   anticall: ANTI_CALL,
