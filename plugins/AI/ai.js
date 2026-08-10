@@ -1,10 +1,6 @@
-import ApiAutoresbotModule from "api-autoresbot";
-const ApiAutoresbot = ApiAutoresbotModule.default || ApiAutoresbotModule;
-
+import axios from "axios";
 import config from "../../config.js";
 import { logCustom } from "../../lib/logger.js";
-
-const api = new ApiAutoresbot(config.APIKEY);
 
 async function handle(sock, messageInfo) {
   const { remoteJid, message, prefix, command, content } = messageInfo;
@@ -22,35 +18,61 @@ async function handle(sock, messageInfo) {
       );
     }
 
-    // Loading
+    if (!config.GROQ_API_KEY) {
+      return await sock.sendMessage(
+        remoteJid,
+        { text: "_⚠️ GROQ_API_KEY belum diisi di config.js_" },
+        { quoted: message }
+      );
+    }
+
     await sock.sendMessage(remoteJid, {
       react: { text: "⏰", key: message.key },
     });
 
-    // Memanggil API dengan penanganan kesalahan dan pengecekan respons
-    const response = await api.get("/api/gemini", { text: content });
+    const res = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.3-70b-versatile",
+        messages: [{ role: "user", content: content }],
+        temperature: 0.7,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${config.GROQ_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      }
+    );
 
-    if (response && response.data) {
+    const jawaban = res.data?.choices?.[0]?.message?.content;
+
+    if (!jawaban) {
       return await sock.sendMessage(
         remoteJid,
-        { text: response.data },
-        { quoted: message }
-      );
-    } else {
-      return await sock.sendMessage(
-        remoteJid,
-        { text: "Maaf, tidak ada respons dari server." },
+        { text: "Maaf, tidak ada respons dari AI." },
         { quoted: message }
       );
     }
-  } catch (error) {
-    logCustom("info", content, `ERROR-COMMAND-${command}.txt`);
 
     return await sock.sendMessage(
       remoteJid,
-      {
-        text: `_⚠️ Gagal: Periksa Apikey Anda! (.apikey)_`,
-      },
+      { text: jawaban },
+      { quoted: message }
+    );
+  } catch (error) {
+    console.error("Error AI:", error.response?.data || error.message);
+    logCustom("info", content, `ERROR-COMMAND-${command}.txt`);
+
+    const pesanError =
+      error.response?.data?.error?.message ||
+      error.message ||
+      "Terjadi kesalahan";
+
+    return await sock.sendMessage(
+      remoteJid,
+      { text: `_⚠️ Gagal AI:_\n${pesanError}` },
       { quoted: message }
     );
   }
@@ -62,8 +84,7 @@ export default {
   OnlyPremium: false,
   OnlyOwner: false,
   limitDeduction: 1,
-  
-  OnlyAdmin: false, // default false
-  OnlyGroup: false, // default false
-  OnlyPrivate: false // default false
+  OnlyAdmin: false,
+  OnlyGroup: false,
+  OnlyPrivate: false,
 };

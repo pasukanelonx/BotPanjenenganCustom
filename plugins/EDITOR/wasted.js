@@ -1,77 +1,91 @@
-import ApiAutoresbotModule from "api-autoresbot";
-const ApiAutoresbot = ApiAutoresbotModule.default || ApiAutoresbotModule;
-
+import { downloadQuotedMedia, downloadMedia } from "../../lib/utils.js";
 import fs from "fs";
 import path from "path";
-import mess from "../../strings.js";
-import config from "../../config.js";
-
-import { downloadQuotedMedia, downloadMedia, reply } from "../../lib/utils.js";
-import { uploadImageFile, logShort } from "../../lib/uploader.js";
+import { Jimp } from "jimp";
 
 async function handle(sock, messageInfo) {
-  const { m, remoteJid, message, content, prefix, command, type, isQuoted } =
-    messageInfo;
+  const { remoteJid, message, prefix, command, type, isQuoted } = messageInfo;
 
   try {
     const mediaType = isQuoted ? isQuoted.type : type;
     if (mediaType !== "image") {
-      return await reply(
-        m,
-        `⚠️ _Kirim/Balas gambar dengan caption *${prefix + command}*_`
+      return await sock.sendMessage(
+        remoteJid,
+        {
+          text: `⚠️ _Kirim/Balas gambar dengan caption *${prefix + command}*_`,
+        },
+        { quoted: message }
       );
     }
 
-    // Tampilkan reaksi "Loading"
     await sock.sendMessage(remoteJid, {
       react: { text: "⏰", key: message.key },
     });
 
-    // Download & Upload media
     const media = isQuoted
       ? await downloadQuotedMedia(message)
       : await downloadMedia(message);
+
     const mediaPath = path.join("tmp", media);
-
     if (!fs.existsSync(mediaPath)) {
-      throw new Error("File media tidak ditemukan setelah diunduh.");
+      return await sock.sendMessage(
+        remoteJid,
+        { text: "❌ File gambar tidak ditemukan." },
+        { quoted: message }
+      );
     }
 
-    // Format dinormalisasi lebih dulu: WhatsApp menyimpan setiap imageMessage
-    // sebagai .jpg walau isinya WebP/PNG, dan server uploader menolak bila isi
-    // file tidak cocok dengan format yang dideklarasikan.
-    const url = await uploadImageFile(mediaPath, { convert: true, label: "WASTED" });
+    const image = await Jimp.read(mediaPath);
 
-    const api = new ApiAutoresbot(config.APIKEY);
-    const MediaBuffer = await api.getBuffer("/api/maker/wasted", { url });
+    // Efek WASTED: gelap + kehijauan (bukan hitam total)
+    image.scan(0, 0, image.bitmap.width, image.bitmap.height, function (x, y, idx) {
+      const r = this.bitmap.data[idx + 0];
+      const g = this.bitmap.data[idx + 1];
+      const b = this.bitmap.data[idx + 2];
 
-    if (!Buffer.isBuffer(MediaBuffer)) {
-      throw new Error("Invalid response: Expected Buffer.");
-    }
+      // grayscale
+      let gray = 0.3 * r + 0.59 * g + 0.11 * b;
+
+      // sedikit gelap, tapi jangan sampai hitam
+      gray = gray * 0.75;
+      if (gray < 20) gray = 20;
+
+      // tint hijau GTA-style
+      let nr = gray * 0.85;
+      let ng = gray * 1.05;
+      let nb = gray * 0.85;
+      if (nr > 255) nr = 255;
+      if (ng > 255) ng = 255;
+      if (nb > 255) nb = 255;
+
+      this.bitmap.data[idx + 0] = nr;
+      this.bitmap.data[idx + 1] = ng;
+      this.bitmap.data[idx + 2] = nb;
+    });
+
+    const buffer = await image.getBuffer("image/jpeg");
 
     await sock.sendMessage(
       remoteJid,
       {
-        image: MediaBuffer,
-        caption: mess.general.success,
+        image: buffer,
+        caption: "💀 *WASTED*",
       },
       { quoted: message }
     );
   } catch (error) {
-    // Satu baris ringkas di console; detail lengkap masuk logs/api.log.
-    // (Label sebelumnya tertulis "Hd" — salin-tempel dari plugin lain.)
-    logShort("WASTED", `Error: ${error?.serverMessage || error?.message || error}`, error);
-
-    // Kirim pesan kesalahan yang lebih informatif
-    const errorMessage = `_Terjadi kesalahan saat memproses gambar._`;
-    await reply(m, errorMessage);
+    console.error("Error Wasted:", error.message);
+    return await sock.sendMessage(
+      remoteJid,
+      { text: `_⚠️ Gagal Wasted:_\n${error.message}` },
+      { quoted: message }
+    );
   }
 }
 
 export default {
   handle,
-  Commands: ["wasted"], // Perintah yang diproses oleh handler ini
+  Commands: ["wasted"],
   OnlyPremium: false,
   OnlyOwner: false,
-  limitDeduction: 1, // Jumlah limit yang akan dikurangi
 };

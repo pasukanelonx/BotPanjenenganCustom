@@ -1,10 +1,7 @@
-import ApiAutoresbotModule from "api-autoresbot";
-const ApiAutoresbot = ApiAutoresbotModule.default || ApiAutoresbotModule;
-
-import { textToAudio } from "../../lib/features.js";
+import axios from "axios";
 import config from "../../config.js";
+import { textToAudio } from "../../lib/features.js";
 import { logCustom } from "../../lib/logger.js";
-const api = new ApiAutoresbot(config.APIKEY);
 
 async function handle(sock, messageInfo) {
   const { remoteJid, message, prefix, command, content } = messageInfo;
@@ -22,50 +19,83 @@ async function handle(sock, messageInfo) {
       );
     }
 
-    // Loading
+    if (!config.GROQ_API_KEY) {
+      return await sock.sendMessage(
+        remoteJid,
+        { text: "_⚠️ GROQ_API_KEY belum diisi di config.js_" },
+        { quoted: message }
+      );
+    }
+
     await sock.sendMessage(remoteJid, {
       react: { text: "⏰", key: message.key },
     });
 
-    // Memanggil API dengan penanganan kesalahan dan pengecekan respons
-    const contentShort = `${content} dan tulis sesingkat mungkin`;
-    const response = await api.get("/api/gemini", { text: contentShort });
-
-    if (response && response.data) {
-      //await sock.sendMessage(remoteJid, { text:response.data }, { quoted: message });
-
-      let bufferAudioResult;
-      try {
-        const bufferAudio = await textToAudio(response.data);
-        if (bufferAudio) {
-          bufferAudioResult = bufferAudio;
-        }
-      } catch {
-        const buffer = await api.getBuffer("/api/tts", { text: response.data });
-        bufferAudioResult = buffer;
+    // 1) Jawab singkat pakai Groq
+    const res = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Jawab pertanyaan user dalam bahasa Indonesia, sangat singkat (maksimal 2 kalimat). Jangan pakai markdown.",
+          },
+          {
+            role: "user",
+            content: content,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 150,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${config.GROQ_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
       }
+    );
 
+    const jawaban = res.data?.choices?.[0]?.message?.content?.trim();
+    if (!jawaban) {
       return await sock.sendMessage(
         remoteJid,
-        { audio: bufferAudioResult, mimetype: "audio/mp4" },
-        { quoted: message }
-      );
-    } else {
-      // Mengirim pesan default jika respons data kosong atau tidak ada
-      return await sock.sendMessage(
-        remoteJid,
-        { text: "Maaf, tidak ada respons dari server." },
+        { text: "Maaf, tidak ada respons dari AI." },
         { quoted: message }
       );
     }
-  } catch (error) {
-    logCustom("info", content, `ERROR-COMMAND-${command}.txt`);
+
+    // 2) Ubah jawaban jadi suara (TTS gratis)
+    const bufferAudio = await textToAudio(jawaban);
+    if (!bufferAudio) {
+      // Kalau TTS gagal, kirim teks saja
+      return await sock.sendMessage(
+        remoteJid,
+        { text: jawaban },
+        { quoted: message }
+      );
+    }
 
     return await sock.sendMessage(
       remoteJid,
-      {
-        text: `_⚠️ Gagal: Periksa Apikey Anda! (.apikey)_`,
-      },
+      { audio: bufferAudio, mimetype: "audio/mp4" },
+      { quoted: message }
+    );
+  } catch (error) {
+    console.error("Error VoiceAI:", error.response?.data || error.message);
+    logCustom("info", content, `ERROR-COMMAND-${command}.txt`);
+
+    const pesanError =
+      error.response?.data?.error?.message ||
+      error.message ||
+      "Terjadi kesalahan";
+
+    return await sock.sendMessage(
+      remoteJid,
+      { text: `_⚠️ Gagal VoiceAI:_\n${pesanError}` },
       { quoted: message }
     );
   }

@@ -1,13 +1,8 @@
-import ApiAutoresbotModule from "api-autoresbot";
-const ApiAutoresbot = ApiAutoresbotModule.default || ApiAutoresbotModule;
-
 import fs from "fs/promises";
 import path from "path";
-import config from "../../config.js";
 import { textToAudio } from "../../lib/features.js";
 import { logCustom } from "../../lib/logger.js";
 import {
-  convertAudioToCompatibleFormat,
   convertAudioToOpus,
   generateUniqueFilename,
 } from "../../lib/utils.js";
@@ -32,29 +27,31 @@ async function handle(sock, messageInfo) {
       );
     }
 
-    // Loading
     await sock.sendMessage(remoteJid, {
       react: { text: "⏰", key: message.key },
     });
 
-    let bufferOriginal = await textToAudio(text);
+    // TTS gratis (Google Translate)
+    const bufferOriginal = await textToAudio(text);
 
     if (!bufferOriginal) {
-      const api = new ApiAutoresbot(config.APIKEY);
-      bufferOriginal = await api.getBuffer("/api/tts", { text: text });
+      return await sock.sendMessage(
+        remoteJid,
+        { text: "_⚠️ Gagal membuat suara. Coba teks lebih pendek._" },
+        { quoted: message }
+      );
     }
 
     const inputPath = path.join(process.cwd(), generateUniqueFilename());
     await fs.writeFile(inputPath, bufferOriginal);
 
-    let bufferFinal = bufferOriginal; // Default menggunakan bufferOriginal
+    let bufferFinal = bufferOriginal;
 
     try {
       const convertedPath = await convertAudioToOpus(inputPath);
       bufferFinal = await fs.readFile(convertedPath);
     } catch (err) {
-      // Konversi opsional: kalau gagal, kirim audio asli (bufferFinal default).
-      console.warn('[VN] Konversi ke opus gagal, pakai audio asli:', err.message);
+      console.warn("[VN] Konversi opus gagal, pakai audio asli:", err.message);
     }
 
     await sock.sendMessage(
@@ -67,13 +64,12 @@ async function handle(sock, messageInfo) {
       { quoted: message }
     );
   } catch (error) {
+    console.error("Error VN:", error.message);
     logCustom("error", text, `ERROR-COMMAND-${command}.txt`);
 
     return await sock.sendMessage(
       remoteJid,
-      {
-        text: `_⚠️ Gagal: Periksa Apikey Anda! (.apikey)_`,
-      },
+      { text: `_⚠️ Gagal VN:_\n${error.message}` },
       { quoted: message }
     );
   }

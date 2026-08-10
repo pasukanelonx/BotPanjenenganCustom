@@ -28,6 +28,11 @@ const RATE_LIMIT = 3000; // 3 detik/chat
 const SIMILARITY = true; // Pencarian kemiripan command (true, false)
 const MODE = 'production'; // [production, development] (jangan di ubah kecuali anda developer)
 const VERSION = global.version; // don't edit
+// ====== API GRATIS / SENDIRI ======
+const GEMINI_API_KEY = '';        // dari https://aistudio.google.com/apikey
+const GROQ_API_KEY = '';          // dari https://console.groq.com (opsional)
+const REMOVEBG_API_KEY = '';      // dari https://www.remove.bg/api (free 50/bulan)
+const RAPIDAPI_KEY = '';          // opsional, untuk beberapa endpoint RapidAPI free
 
 const EMAIL = 'panjenengan@gmail.com';
 const REGION = 'Indonesia';
@@ -68,6 +73,10 @@ const STATUS_SCHEDULED = true;
 
 const config = {
   APIKEY,
+  GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+  GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+  REMOVEBG_API_KEY,
+  RAPIDAPI_KEY,
   phone_number_bot: NOMOR_BOT,
   type_connection: CONNECTION,
   pairing_code: PAIRING_CODE,

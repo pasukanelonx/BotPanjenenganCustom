@@ -1,8 +1,6 @@
-import ApiAutoresbotModule from "api-autoresbot";
-const ApiAutoresbot = ApiAutoresbotModule.default || ApiAutoresbotModule;
+import axios from "axios";
 import config from "../../config.js";
 import { logCustom } from "../../lib/logger.js";
-const api = new ApiAutoresbot(config.APIKEY);
 
 async function handle(sock, messageInfo) {
   const { remoteJid, message, content, prefix, command } = messageInfo;
@@ -20,40 +18,72 @@ async function handle(sock, messageInfo) {
       );
     }
 
-    // Loading
+    if (!config.GROQ_API_KEY) {
+      return await sock.sendMessage(
+        remoteJid,
+        { text: "_⚠️ GROQ_API_KEY belum diisi di config.js_" },
+        { quoted: message }
+      );
+    }
+
     await sock.sendMessage(remoteJid, {
       react: { text: "⏰", key: message.key },
     });
 
-    // Memanggil API dengan penanganan kesalahan dan pengecekan respons
-    const response = await api.get("/api/simi", {
-      text: content,
-      language: "id",
-    });
+    const res = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Kamu adalah Simi, chatbot WhatsApp yang santai, lucu, dan ramah. Jawab singkat dalam bahasa Indonesia sehari-hari. Jangan terlalu formal. Jangan bilang kamu AI kecuali ditanya.",
+          },
+          {
+            role: "user",
+            content: content,
+          },
+        ],
+        temperature: 0.9,
+        max_tokens: 300,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${config.GROQ_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      }
+    );
 
-    if (response && response.data) {
-      // Mengirim pesan jika data dari respons tersedia
-      await sock.sendMessage(
-        remoteJid,
-        { text: response.data },
-        { quoted: message }
-      );
-    } else {
-      // Mengirim pesan default jika respons data kosong atau tidak ada
-      await sock.sendMessage(
+    const jawaban = res.data?.choices?.[0]?.message?.content;
+
+    if (!jawaban) {
+      return await sock.sendMessage(
         remoteJid,
         { text: "Maaf, tidak ada respons dari server." },
         { quoted: message }
       );
     }
-  } catch (error) {
-    logCustom("info", content, `ERROR-COMMAND-${command}.txt`);
 
     return await sock.sendMessage(
       remoteJid,
-      {
-        text: `_⚠️ Gagal: Periksa Apikey Anda! (.apikey)_`,
-      },
+      { text: jawaban },
+      { quoted: message }
+    );
+  } catch (error) {
+    console.error("Error Simi:", error.response?.data || error.message);
+    logCustom("info", content, `ERROR-COMMAND-${command}.txt`);
+
+    const pesanError =
+      error.response?.data?.error?.message ||
+      error.message ||
+      "Terjadi kesalahan";
+
+    return await sock.sendMessage(
+      remoteJid,
+      { text: `_⚠️ Gagal Simi:_\n${pesanError}` },
       { quoted: message }
     );
   }

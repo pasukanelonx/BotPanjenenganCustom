@@ -1,17 +1,12 @@
-import ApiAutoresbotModule from "api-autoresbot";
-const ApiAutoresbot = ApiAutoresbotModule.default || ApiAutoresbotModule;
-import config from "../../config.js";
-import { downloadToBuffer } from "../../lib/utils.js";
+import { textToAudio } from "../../lib/features.js";
 import { logCustom } from "../../lib/logger.js";
 
 async function handle(sock, messageInfo) {
   const { remoteJid, message, content, prefix, command, isQuoted } =
     messageInfo;
 
-  // Ambil teks yang dikirim atau teks dari pesan yang dikutip
   const text = content?.trim() || isQuoted?.text?.trim() || null;
 
-  // Validasi input
   if (!text || text.length < 1) {
     return sock.sendMessage(
       remoteJid,
@@ -23,41 +18,37 @@ async function handle(sock, messageInfo) {
   }
 
   try {
-    // Loading
     await sock.sendMessage(remoteJid, {
       react: { text: "⏰", key: message.key },
     });
 
-    // Panggil API
-    const api = new ApiAutoresbot(config.APIKEY);
-    const response = await api.get("/api/sound/textanime", { text });
+    // TTS gratis (pengganti /api/sound/textanime)
+    const audioBuffer = await textToAudio(text);
 
-    if (response?.data) {
-      // Download hasil API ke buffer
-      const audioBuffer = await downloadToBuffer(response.data, "mp4");
-
-      // Kirim sebagai audio PTT
-      await sock.sendMessage(
+    if (!audioBuffer) {
+      return await sock.sendMessage(
         remoteJid,
-        {
-          audio: audioBuffer,
-          mimetype: "audio/mp4",
-        },
+        { text: "_⚠️ Gagal membuat suara. Coba teks lebih pendek._" },
         { quoted: message }
       );
-    } else {
-      throw new Error("Respon API kosong atau tidak sesuai.");
     }
+
+    await sock.sendMessage(
+      remoteJid,
+      {
+        audio: audioBuffer,
+        mimetype: "audio/mp4",
+        ptt: true,
+      },
+      { quoted: message }
+    );
   } catch (error) {
-    // Log error ke file
     logCustom("error", text, `ERROR-COMMAND-${command}.txt`);
-    console.error("⚠️ Terjadi kesalahan:", error);
+    console.error("Error VNAnime:", error.message);
 
     return await sock.sendMessage(
       remoteJid,
-      {
-        text: `_⚠️ Gagal: Periksa Apikey Anda! (.apikey)_`,
-      },
+      { text: `_⚠️ Gagal VNAnime:_\n${error.message}` },
       { quoted: message }
     );
   }
