@@ -18,7 +18,7 @@ import { generateWAMessageFromContent, prepareWAMessageMedia, proto } from 'bail
    CONFIG
 ========================= */
 
-const GROUP_LINK = 'https://www.whatsapp.com/channel/0029VaDSRuf05MUekJbazP1D';
+const GROUP_LINK = 'https://chat.whatsapp.com/FwbH80SgQV86RDIF4kacrk?s=cl&p=a&ilr=1';
 
 const ENABLE_MENU_AUDIO = true;
 

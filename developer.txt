@@ -6,7 +6,7 @@ Script ini **TIDAK BOLEH DIPERJUALBELIKAN** dalam bentuk apa pun!
 ║                🛠️ INFORMASI SCRIPT           ║
 ╠══════════════════════════════════════════════╣
 ║ 📦 Version    : 5.3.0                       ║
-║ 👨‍💻 Developer  : Azhari Creative             ║
+║ 👨‍💻 Developer  : Mail bin Mail               ║
 ║ 🌐 Website    : https://autoresbot.com       ║
 ║ 💻 GitHub  : github.com/autoresbot/resbot-md ║
 ╚══════════════════════════════════════════════╝

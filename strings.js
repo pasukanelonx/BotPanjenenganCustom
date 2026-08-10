@@ -6,7 +6,7 @@ Script ini **TIDAK BOLEH DIPERJUALBELIKAN** dalam bentuk apa pun!
 ║                🛠️ INFORMASI SCRIPT           ║
 ╠══════════════════════════════════════════════╣
 ║ 📦 Version   : 5.3.0
-║ 👨‍💻 Developer  : Azhari Creative              ║
+║ 👨‍💻 Developer  : Mail bin Mail                ║
 ║ 🌐 Website    : https://autoresbot.com       ║
 ║ 💻 GitHub  : github.com/autoresbot/resbot-md ║
 ╚══════════════════════════════════════════════╝
@@ -20,7 +20,7 @@ const mess = {
   game: {
     isPlaying: '⚠️ _Permainan sedang berlangsung._ Ketik *nyerah* untuk mengakhiri permainan.',
     isGroup: '⚠️ _Permainan hanya bisa dimainkan di grup_',
-    isStop: '⚠️ _Fitur game dimatikan di grub ini_',
+    isStop: '⚠️ _Fitur game dimatikan di grup ini_',
   },
   general: {
     isOwner: '⚠️ _Perintah ini Hanya Untuk Owner Bot._',
@@ -31,16 +31,16 @@ const mess = {
       '⚠️ _Limit kamu sudah habis_ \n\n_Ketik *.claim* untuk mendapatkan limit_ _Atau 💎 Berlangganan Member Premium agar limitmu tanpa batas_',
     success: '✅ _Success Kak_',
     isBlocked: '⚠️ _Kamu sedang di block dari penggunaan bot ini_', // kalau block seluruhnya
-    isBaned: '⚠️ _Kamu sedang di ban pada grub ini_', // kalau ban hanya grub itu saja
-    fiturBlocked: '⚠️ _Fitur sedang di ban di grub ini_',
+    isBaned: '⚠️ _Kamu sedang di ban pada grup ini_', // kalau ban hanya grup itu saja
+    fiturBlocked: '⚠️ _Fitur sedang di ban di grup ini_',
   },
   action: {
     grub_open: '✅ Grup berhasil dibuka',
     grub_close: '✅ Grup berhasil ditutup',
-    user_kick: '✅ _Berhasil mengeluarkan peserta dari grup._',
+    user_kick: '✅ _Berhasil mengeluarkan beban dari grup._',
     mute: '_Grup telah berhasil di-mute. Semua perintah akan dinonaktifkan kecuali untuk menghidupkan kembali dengan mengetik_ *.unmute*.',
     unmute: '_Grup telah berhasil di-unmute. Semua perintah kembali aktif._',
-    resetgc: '_Link Grub sudah di reset_',
+    resetgc: '_Link Grup sudah di reset_',
   },
   handler: {
     // kosongkan jika tidak menggunakan notif = ''
@@ -54,12 +54,12 @@ const mess = {
     antispamchat2:
       '⛔ @sender _Telah diblokir karena melakukan spam secara berulang. Hubungi owner jika ada pertanyaan._',
     antivirtex: '⚠️ @sender _Terdeteksi Mengirim Virtex._',
-    antitagsw: '⚠️ @sender _Terdeteksi Tag Sw di grub ini_',
+    antitagsw: '⚠️ @sender _Terdeteksi Tag Sw di grup ini_',
     antibot: '⚠️ @sender _Terdeteksi Adalah Bot_',
     afk: '🚫 *Jangan tag dia!*\n\n❏ _@sender sedang AFK sejak *@durasi*_@alasan',
     afk_message: '🕊️ @sender telah kembali dari AFK sejak _*@durasi*_.@alasan',
     sewa_notif: '⚠️ _*Peringatan!*_\n\n_Masa Sewabot :_ @date',
-    sewa_out: `❌ _*Masa SewaBOT Telah Habis*_\n_Bot akan keluar otomatis_\n\nTerima kasih sudah menggunakan layanan sewa autoresbot.\n\n*Nomor Owner*\nwa.me/@ownernumber`,
+    sewa_out: `❌ _*Masa SewaBOT Telah Habis*_\n_Bot akan keluar otomatis_\n\nTerima kasih sudah menggunakan layanan sewa bot.\n\n*Nomor Owner*\nwa.me/@ownernumber`,
     notifultah: '_Selamat ulang tahun! 🎉🎂_ @sender',
   },
   game_handler: {
