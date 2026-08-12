@@ -60,14 +60,14 @@ export default {
       const ref = getReportRef(quotedId);
       if (!ref || !ref.userJid) return;
 
-      const adminName = pushName || 'Admin';
+      const adminName = 'Admin';
       // PENTING: pakai teks mentah, bukan messageInfo.content
       const body = getRawText(message);
 
       const header =
         `💬 *Balasan Admin*\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `👤 Dari: ${adminName}\n` +
+        `👤 Dari: 'Admin'\n` +
         `━━━━━━━━━━━━━━━━\n`;
 
       if (type === 'image' || type === 'video') {
