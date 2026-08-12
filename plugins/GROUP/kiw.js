@@ -9,9 +9,9 @@ import {
   getKiwSession,
   clearKiwSession,
   saveReportRef,
+  clearReportRefsByUser,
 } from '../../lib/kiwSession.js';
 
-/** Teks mentah dari WhatsApp */
 function getRawText(message) {
   const m = message?.message || {};
   return (
@@ -24,18 +24,13 @@ function getRawText(message) {
   ).trim();
 }
 
-/**
- * Teks untuk langkah session.
- * Jika user masih ketik ".kiw ..." di tengah session, buang prefix command saja.
- */
 function getSessionText(messageInfo) {
   let text = getRawText(messageInfo.message);
   if (!text) text = (messageInfo.content || '').trim();
-  text = text.replace(/^\s*[.!#]?kiw\s+/i, '').trim();
+  text = text.replace(/^\s*[.!#]?kiw\b\s*/i, '').trim();
   return text;
 }
 
-/** Ambil nomor WA asli jika tersedia; null jika hanya LID */
 async function resolveNomorWa(sock, messageInfo) {
   const { sender, senderPn, participantPn, message, remoteJid } = messageInfo;
 
@@ -120,10 +115,6 @@ function joinListText(username) {
   return t;
 }
 
-/**
- * Kirim laporan ke grup admin + simpan ID pesan
- * supaya admin bisa reply dan bot teruskan ke user
- */
 async function kirimLaporanAdmin(
   sock,
   messageInfo,
@@ -176,7 +167,10 @@ async function kirimLaporanAdmin(
   return sent;
 }
 
-/** Dipakai plugin + handler session */
+function bukaSesiChatAdmin(messageInfo) {
+  setKiwSession(messageInfo, { mode: 'chat_admin' });
+}
+
 export async function processKiwSession(sock, messageInfo) {
   const {
     remoteJid,
@@ -191,6 +185,143 @@ export async function processKiwSession(sock, messageInfo) {
   const bodyLower = body.toLowerCase();
   const sess = getKiwSession(messageInfo);
   if (!sess) return false;
+
+  // ----- CHAT 2 ARAH: user → admin -----
+  if (sess.mode === 'chat_admin') {
+    if (['selesai', 'close', 'stop', 'end'].includes(bodyLower)) {
+      const nama = pushName || 'Tanpa Nama';
+      const nomor = await resolveNomorWa(sock, messageInfo);
+      const identitas = formatIdentitas(nomor, sender);
+      const waktu = moment().tz('Asia/Jakarta').format('DD/MM/YYYY HH:mm:ss');
+
+      clearKiwSession(messageInfo);
+      clearReportRefsByUser(sender);
+
+      if (config.group_laporan) {
+        try {
+          await sock.sendMessage(config.group_laporan, {
+            text:
+              `🔒 *SESI CHAT DITUTUP*\n` +
+              `━━━━━━━━━━━━━━━━\n` +
+              `👤 *Nama:* ${nama}\n` +
+              `${identitas}\n` +
+              `🕒 *Waktu:* ${waktu}\n` +
+              `━━━━━━━━━━━━━━━━\n` +
+              `_User mengakhiri sesi. Balasan ke bubble lama tidak akan diteruskan._`,
+          });
+        } catch (e) {
+          console.warn('[kiw] notif selesai ke admin gagal:', e.message);
+        }
+      }
+
+      await sock.sendMessage(
+        remoteJid,
+        {
+          text:
+            '✅ Sesi chat dengan admin ditutup.\n' +
+            'Pesan selanjutnya tidak diteruskan ke admin.',
+        },
+        { quoted: message }
+      );
+      return true;
+    }
+
+    const nama = pushName || 'Tanpa Nama';
+    const nomor = await resolveNomorWa(sock, messageInfo);
+    const identitas = formatIdentitas(nomor, sender);
+
+    const mediaType = isQuoted ? isQuoted.type : type;
+    let mediaPath = null;
+    let mType = null;
+
+    if (mediaType === 'image' || mediaType === 'video') {
+      try {
+        const media = isQuoted
+          ? await downloadQuotedMedia(message)
+          : await downloadMedia(message);
+        mediaPath = path.join('tmp', media);
+        mType = mediaType;
+      } catch (e) {
+        console.warn('[kiw] download media chat:', e.message);
+      }
+    }
+
+    if (!body && !mediaPath) {
+      await sock.sendMessage(
+        remoteJid,
+        {
+          text: '_Kirim teks/foto/video, atau ketik *selesai* untuk tutup sesi._',
+        },
+        { quoted: message }
+      );
+      return true;
+    }
+
+    if (!config.group_laporan) {
+      await sock.sendMessage(
+        remoteJid,
+        { text: '_⚠️ GROUP_LAPORAN belum diisi di config.js_' },
+        { quoted: message }
+      );
+      return true;
+    }
+
+    const caption =
+      `💬 *BALASAN USER*\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `👤 *Nama:* ${nama}\n` +
+      `${identitas}\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `📝 *Pesan:*\n${body || '(media)'}\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `_Balas pesan ini untuk membalas ke user._`;
+
+    let sent;
+    try {
+      if (mediaPath && fs.existsSync(mediaPath)) {
+        const buffer = fs.readFileSync(mediaPath);
+        if (mType === 'video') {
+          sent = await sock.sendMessage(config.group_laporan, {
+            video: buffer,
+            caption,
+          });
+        } else {
+          sent = await sock.sendMessage(config.group_laporan, {
+            image: buffer,
+            caption,
+          });
+        }
+      } else {
+        sent = await sock.sendMessage(config.group_laporan, { text: caption });
+      }
+    } catch (e) {
+      console.error('[kiw] forward chat_admin:', e.message);
+      await sock.sendMessage(
+        remoteJid,
+        { text: '_⚠️ Gagal meneruskan pesan ke admin._' },
+        { quoted: message }
+      );
+      return true;
+    }
+
+    const msgId = sent?.key?.id;
+    if (msgId) {
+      saveReportRef(msgId, {
+        userJid: sender,
+        userName: nama,
+        userNumber: nomor || null,
+      });
+    }
+
+    setKiwSession(messageInfo, { mode: 'chat_admin' });
+
+    await sock.sendMessage(
+      remoteJid,
+      { text: '_✅ Pesan diteruskan ke admin._' },
+      { quoted: message }
+    );
+    return true;
+  }
 
   // ----- TUNGGU LAPORAN -----
   if (sess.mode === 'wait_lapor') {
@@ -224,11 +355,16 @@ export async function processKiwSession(sock, messageInfo) {
     });
 
     await kirimLaporanAdmin(sock, messageInfo, teksLaporan, mediaPath, mType);
-    clearKiwSession(messageInfo);
+    bukaSesiChatAdmin(messageInfo);
 
     await sock.sendMessage(
       remoteJid,
-      { text: '✅ *Laporan terkirim ke admin.* Terima kasih.' },
+      {
+        text:
+          '✅ *Laporan terkirim ke admin.*\n\n' +
+          'Silakan lanjut chat di sini — pesanmu akan diteruskan ke admin.\n' +
+          'Ketik *selesai* untuk mengakhiri sesi.',
+      },
       { quoted: message }
     );
     return true;
@@ -343,7 +479,7 @@ export async function processKiwSession(sock, messageInfo) {
     return true;
   }
 
-  // menu: user balas 1 / 2
+  // menu teks: 1 / 2
   if (sess.mode === 'menu') {
     if (bodyLower === '1' || bodyLower === 'lapor') {
       if (!config.group_laporan) {
@@ -410,15 +546,14 @@ async function handle(sock, messageInfo) {
       );
     }
 
-    // Jika sedang dalam session, proses dulu
     const processed = await processKiwSession(sock, messageInfo);
     if (processed) return;
 
     const body = getSessionText(messageInfo);
     const bodyLower = body.toLowerCase();
 
-    // .kiw saja → menu
-    if (!body || bodyLower === 'kiw') {
+    // .kiw saja → menu TEKS
+    if (!body) {
       setKiwSession(messageInfo, { mode: 'menu' });
       return sock.sendMessage(
         remoteJid,
@@ -427,7 +562,6 @@ async function handle(sock, messageInfo) {
       );
     }
 
-    // .kiw lapor / 1
     if (bodyLower === 'lapor' || bodyLower === '1') {
       if (!config.group_laporan) {
         return sock.sendMessage(
@@ -451,7 +585,6 @@ async function handle(sock, messageInfo) {
       );
     }
 
-    // .kiw join / 2
     if (bodyLower === 'join' || bodyLower === '2') {
       setKiwSession(messageInfo, { mode: 'wait_join_username' });
       return sock.sendMessage(
@@ -468,15 +601,20 @@ async function handle(sock, messageInfo) {
       );
     }
 
-    // .kiw teks... → laporan cepat
     if (command === 'kiw' && body) {
       await sock.sendMessage(remoteJid, {
         react: { text: '⏰', key: message.key },
       });
       await kirimLaporanAdmin(sock, messageInfo, body, null, null);
+      bukaSesiChatAdmin(messageInfo);
       return sock.sendMessage(
         remoteJid,
-        { text: '✅ *Laporan terkirim ke admin.* Terima kasih.' },
+        {
+          text:
+            '✅ *Laporan terkirim ke admin.*\n\n' +
+            'Silakan lanjut chat di sini — pesanmu akan diteruskan ke admin.\n' +
+            'Ketik *selesai* untuk mengakhiri sesi.',
+        },
         { quoted: message }
       );
     }
