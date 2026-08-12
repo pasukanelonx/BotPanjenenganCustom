@@ -11,7 +11,7 @@ import {
   saveReportRef,
 } from '../../lib/kiwSession.js';
 
-/** Teks mentah dari WhatsApp (hindari content Resbot yang kepotong) */
+/** Teks mentah dari WhatsApp */
 function getRawText(message) {
   const m = message?.message || {};
   return (
@@ -25,26 +25,13 @@ function getRawText(message) {
 }
 
 /**
- * Ambil isi laporan dari user.
- * - Kalau user ketik ".kiw isi laporan" → buang prefix+command
- * - Kalau mode session (sudah pilih lapor) → ambil teks utuh
+ * Teks untuk langkah session.
+ * Jika user masih ketik ".kiw ..." di tengah session, buang prefix command saja.
  */
-function getLaporanText(messageInfo, { stripCommand = false } = {}) {
-  const { message, content, prefix, command } = messageInfo;
-  let text = getRawText(message);
-
-  // fallback kalau raw kosong
-  if (!text) text = (content || '').trim();
-
-  if (stripCommand && text) {
-    // buang ".kiw" atau "kiw" di depan saja, jangan potong kata lain
-    const re = new RegExp(
-      `^\\s*[${(prefix || ['.']).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('')}]?${command || 'kiw'}\\s*`,
-      'i'
-    );
-    text = text.replace(re, '').trim();
-  }
-
+function getSessionText(messageInfo) {
+  let text = getRawText(messageInfo.message);
+  if (!text) text = (messageInfo.content || '').trim();
+  text = text.replace(/^\s*[.!#]?kiw\s+/i, '').trim();
   return text;
 }
 
@@ -128,7 +115,8 @@ function joinListText(username) {
     `• *1*\n` +
     `• *1,3,5*\n` +
     `• *all*\n\n` +
-    `_Session 5 menit_`;
+    `_Ketik langsung tanpa .kiw_\n` +
+    `_Session 10 menit_`;
   return t;
 }
 
@@ -176,7 +164,6 @@ async function kirimLaporanAdmin(
     sent = await sock.sendMessage(target, { text: caption });
   }
 
-  // Simpan ID pesan laporan → user pemohon
   const msgId = sent?.key?.id;
   if (msgId) {
     saveReportRef(msgId, {
@@ -194,16 +181,15 @@ export async function processKiwSession(sock, messageInfo) {
   const {
     remoteJid,
     message,
-    content,
     sender,
     pushName,
     type,
     isQuoted,
   } = messageInfo;
 
-  const body = (content || '').trim();
+  const body = getSessionText(messageInfo);
   const bodyLower = body.toLowerCase();
-  const sess = getKiwSession(sender);
+  const sess = getKiwSession(messageInfo);
   if (!sess) return false;
 
   // ----- TUNGGU LAPORAN -----
@@ -220,7 +206,9 @@ export async function processKiwSession(sock, messageInfo) {
       mType = mediaType;
     }
 
-    if (!body && !mediaPath) {
+    const teksLaporan = body;
+
+    if (!teksLaporan && !mediaPath) {
       await sock.sendMessage(
         remoteJid,
         {
@@ -235,20 +223,9 @@ export async function processKiwSession(sock, messageInfo) {
       react: { text: '⏰', key: message.key },
     });
 
-    const teksLaporan = getLaporanText(messageInfo, { stripCommand: false });
     await kirimLaporanAdmin(sock, messageInfo, teksLaporan, mediaPath, mType);
+    clearKiwSession(messageInfo);
 
-    if (!teksLaporan && !mediaPath) {
-    await sock.sendMessage(
-    remoteJid,
-    {
-      text: '_Kirim teks, foto, atau video laporan (boleh balas pesan bot)._',
-    },
-    { quoted: message }
-    );
-    return true;
-    }
-    
     await sock.sendMessage(
       remoteJid,
       { text: '✅ *Laporan terkirim ke admin.* Terima kasih.' },
@@ -263,13 +240,18 @@ export async function processKiwSession(sock, messageInfo) {
     if (!username || username.length < 2) {
       await sock.sendMessage(
         remoteJid,
-        { text: '_Username tidak valid. Ketik lagi username akunnya._' },
+        {
+          text:
+            '_Username tidak valid._\n' +
+            'Ketik langsung username akunnya (tanpa .kiw).\n' +
+            'Contoh: *username123*',
+        },
         { quoted: message }
       );
       return true;
     }
 
-    setKiwSession(sender, {
+    setKiwSession(messageInfo, {
       mode: 'wait_join_grup',
       username,
     });
@@ -302,7 +284,10 @@ export async function processKiwSession(sock, messageInfo) {
       await sock.sendMessage(
         remoteJid,
         {
-          text: '_Pilihan tidak valid._ Contoh: *1* / *1,3,5* / *all*',
+          text:
+            '_Pilihan tidak valid._\n' +
+            'Ketik langsung (tanpa .kiw):\n' +
+            '• *1*\n• *1,3,5*\n• *all*',
         },
         { quoted: message }
       );
@@ -329,9 +314,10 @@ export async function processKiwSession(sock, messageInfo) {
       `_User sudah dikirimi link invite. Siap acc saat request masuk._\n` +
       `_Balas pesan ini untuk membalas ke pemohon._`;
 
-    let sent;
     if (config.group_laporan) {
-      sent = await sock.sendMessage(config.group_laporan, { text: teksAdmin });
+      const sent = await sock.sendMessage(config.group_laporan, {
+        text: teksAdmin,
+      });
       const msgId = sent?.key?.id;
       if (msgId) {
         saveReportRef(msgId, {
@@ -352,7 +338,7 @@ export async function processKiwSession(sock, messageInfo) {
     });
     out += `_Setelah join, tunggu admin accept._`;
 
-    clearKiwSession(sender);
+    clearKiwSession(messageInfo);
     await sock.sendMessage(remoteJid, { text: out }, { quoted: message });
     return true;
   }
@@ -368,15 +354,16 @@ export async function processKiwSession(sock, messageInfo) {
         );
         return true;
       }
-      setKiwSession(sender, { mode: 'wait_lapor' });
+      setKiwSession(messageInfo, { mode: 'wait_lapor' });
       await sock.sendMessage(
         remoteJid,
         {
           text:
             `📝 *Mode Laporan*\n\n` +
             `Kirim *teks / foto / video* laporan kamu sekarang.\n` +
-            `Boleh *membalas pesan ini*.\n\n` +
-            `_Session 5 menit_`,
+            `Boleh *membalas pesan ini*.\n` +
+            `_Ketik langsung tanpa .kiw_\n\n` +
+            `_Session 10 menit_`,
         },
         { quoted: message }
       );
@@ -384,15 +371,16 @@ export async function processKiwSession(sock, messageInfo) {
     }
 
     if (bodyLower === '2' || bodyLower === 'join') {
-      setKiwSession(sender, { mode: 'wait_join_username' });
+      setKiwSession(messageInfo, { mode: 'wait_join_username' });
       await sock.sendMessage(
         remoteJid,
         {
           text:
             `👥 *Join Akun ke Grup*\n\n` +
-            `Ketik *username* akun yang ingin di-join.\n\n` +
+            `Ketik *username* akun yang ingin di-join.\n` +
+            `_Langsung ketik username, tanpa .kiw_\n\n` +
             `Contoh:\n• username123\n\n` +
-            `_Session 5 menit_`,
+            `_Session 10 menit_`,
         },
         { quoted: message }
       );
@@ -410,7 +398,6 @@ async function handle(sock, messageInfo) {
     content,
     prefix,
     command,
-    sender,
     isGroup,
   } = messageInfo;
 
@@ -423,14 +410,16 @@ async function handle(sock, messageInfo) {
       );
     }
 
-    const body = (content || '').trim();
-    const bodyLower = body.toLowerCase();
-
+    // Jika sedang dalam session, proses dulu
     const processed = await processKiwSession(sock, messageInfo);
     if (processed) return;
 
+    const body = getSessionText(messageInfo);
+    const bodyLower = body.toLowerCase();
+
+    // .kiw saja → menu
     if (!body || bodyLower === 'kiw') {
-      setKiwSession(sender, { mode: 'menu' });
+      setKiwSession(messageInfo, { mode: 'menu' });
       return sock.sendMessage(
         remoteJid,
         { text: menuText(prefix) },
@@ -438,6 +427,7 @@ async function handle(sock, messageInfo) {
       );
     }
 
+    // .kiw lapor / 1
     if (bodyLower === 'lapor' || bodyLower === '1') {
       if (!config.group_laporan) {
         return sock.sendMessage(
@@ -446,44 +436,52 @@ async function handle(sock, messageInfo) {
           { quoted: message }
         );
       }
-      setKiwSession(sender, { mode: 'wait_lapor' });
+      setKiwSession(messageInfo, { mode: 'wait_lapor' });
       return sock.sendMessage(
         remoteJid,
         {
           text:
             `📝 *Mode Laporan*\n\n` +
             `Kirim *teks / foto / video* laporan kamu sekarang.\n` +
-            `Boleh *membalas pesan ini*.\n\n` +
-            `_Session 5 menit_`,
+            `Boleh *membalas pesan ini*.\n` +
+            `_Ketik langsung tanpa .kiw_\n\n` +
+            `_Session 10 menit_`,
         },
         { quoted: message }
       );
     }
 
+    // .kiw join / 2
     if (bodyLower === 'join' || bodyLower === '2') {
-      setKiwSession(sender, { mode: 'wait_join_username' });
+      setKiwSession(messageInfo, { mode: 'wait_join_username' });
       return sock.sendMessage(
         remoteJid,
         {
           text:
             `👥 *Join Akun ke Grup*\n\n` +
-            `Ketik *username* akun yang ingin di-join.\n\n` +
+            `Ketik *username* akun yang ingin di-join.\n` +
+            `_Langsung ketik username, tanpa .kiw_\n\n` +
             `Contoh:\n• username123\n\n` +
-            `_Session 5 menit_`,
+            `_Session 10 menit_`,
         },
         { quoted: message }
       );
     }
 
-    const teksCepat = getLaporanText(messageInfo, { stripCommand: true });
-    if (command === 'kiw' && teksCepat) {
-    await sock.sendMessage(remoteJid, {
-    react: { text: '⏰', key: message.key },
-    });
-    await kirimLaporanAdmin(sock, messageInfo, teksCepat, null, null);
+    // .kiw teks... → laporan cepat
+    if (command === 'kiw' && body) {
+      await sock.sendMessage(remoteJid, {
+        react: { text: '⏰', key: message.key },
+      });
+      await kirimLaporanAdmin(sock, messageInfo, body, null, null);
+      return sock.sendMessage(
+        remoteJid,
+        { text: '✅ *Laporan terkirim ke admin.* Terima kasih.' },
+        { quoted: message }
+      );
     }
 
-    setKiwSession(sender, { mode: 'menu' });
+    setKiwSession(messageInfo, { mode: 'menu' });
     return sock.sendMessage(
       remoteJid,
       { text: menuText(prefix) },
@@ -492,7 +490,7 @@ async function handle(sock, messageInfo) {
   } catch (error) {
     console.error('Error kiw:', error.message);
     logCustom('error', content, 'ERROR-COMMAND-kiw.txt');
-    clearKiwSession(sender);
+    clearKiwSession(messageInfo);
     return sock.sendMessage(
       remoteJid,
       {

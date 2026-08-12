@@ -67,7 +67,7 @@ export default {
       const header =
         `💬 *Balasan Admin*\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `👤 Dari: 'Admin'\n` +
+        `👤 Dari: Admin\n` +
         `━━━━━━━━━━━━━━━━\n`;
 
       if (type === 'image' || type === 'video') {
