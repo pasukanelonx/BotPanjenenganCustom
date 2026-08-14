@@ -28,6 +28,11 @@ const RATE_LIMIT = 3000; // 3 detik/chat
 const SIMILARITY = true; // Pencarian kemiripan command (true, false)
 const MODE = 'production'; // [production, development] (jangan di ubah kecuali anda developer)
 const VERSION = global.version; // don't edit
+
+const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID || '';
+// path file credentials ATAU JSON string di env
+const GOOGLE_CREDENTIALS = process.env.GOOGLE_CREDENTIALS || '';
+
 // ====== API GRATIS / SENDIRI ======
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';        // dari https://aistudio.google.com/apikey
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';     // dari https://console.groq.com (opsional)
@@ -86,6 +91,8 @@ const STATUS_SCHEDULED = true;
 
 const config = {
   APIKEY,
+  google_sheet_id: GOOGLE_SHEET_ID,
+  google_credentials: GOOGLE_CREDENTIALS,
   GEMINI_API_KEY, 
   GROQ_API_KEY,
   REMOVEBG_API_KEY,
