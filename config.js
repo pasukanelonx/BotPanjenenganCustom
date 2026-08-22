@@ -46,7 +46,7 @@ const DATA_OWNER = ['225155104116838@lid']; // cara ambil owner https://youtu.be
 
 // Konfiqurasi Chat
 const ANTI_CALL = false; // jika true (setiap yang nelpon pribadi akan di block)
-const AUTO_READ = true; // jika true (setiap chat akan di baca/centang 2 biru)
+const AUTO_READ = false; // jika true (setiap chat akan di baca/centang 2 biru)
 const AUTO_BACKUP = false; // jika true (setiap restart server, data backup di kirimkan ke wa owner);
 const MIDNIGHT_RESTART = false; // Restart setiap jam 12 malam
 const PRESENCE_UPDATE = ''; // unavailable, available, composing, recording, paused
