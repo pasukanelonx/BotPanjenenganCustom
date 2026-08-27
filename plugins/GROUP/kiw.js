@@ -12,6 +12,8 @@ import {
   clearReportRefsByUser,
 } from '../../lib/kiwSession.js';
 
+const JOIN_CHAT_TTL = 10 * 60 * 1000;
+
 function getRawText(message) {
   const m = message?.message || {};
   return (
@@ -167,8 +169,8 @@ async function kirimLaporanAdmin(
   return sent;
 }
 
-function bukaSesiChatAdmin(messageInfo) {
-  setKiwSession(messageInfo, { mode: 'chat_admin' });
+function bukaSesiChatAdmin(messageInfo, extra = {}) {
+  setKiwSession(messageInfo, { mode: 'chat_admin', ...extra });
 }
 
 export async function processKiwSession(sock, messageInfo) {
@@ -313,7 +315,11 @@ export async function processKiwSession(sock, messageInfo) {
       });
     }
 
-    setKiwSession(messageInfo, { mode: 'chat_admin' });
+    setKiwSession(messageInfo, {
+      mode: 'chat_admin',
+      from: sess.from,
+      username: sess.username,
+    });
 
     await sock.sendMessage(
       remoteJid,
@@ -355,7 +361,7 @@ export async function processKiwSession(sock, messageInfo) {
     });
 
     await kirimLaporanAdmin(sock, messageInfo, teksLaporan, mediaPath, mType);
-    bukaSesiChatAdmin(messageInfo);
+    bukaSesiChatAdmin(messageInfo, { from: 'lapor' });
 
     await sock.sendMessage(
       remoteJid,
@@ -472,9 +478,20 @@ export async function processKiwSession(sock, messageInfo) {
     selected.forEach((g) => {
       out += `• *${g.nama}*\n${g.link || '(link belum diisi)'}\n\n`;
     });
-    out += `_Setelah join, tunggu admin accept._`;
+    out +=
+      `_Setelah join, tunggu admin accept._\n\n` +
+      `💬 Sesi chat ke admin *aktif 10 menit*.\n` +
+      `Ketik langsung di sini jika ada kendala.\n` +
+      `Ketik *selesai* untuk menutup sesi.`;
 
-    clearKiwSession(messageInfo);
+    // Jangan clear session — buka chat 2 arah 10 menit
+    setKiwSession(messageInfo, {
+      mode: 'chat_admin',
+      ttl: JOIN_CHAT_TTL,
+      from: 'join',
+      username,
+    });
+
     await sock.sendMessage(remoteJid, { text: out }, { quoted: message });
     return true;
   }
@@ -606,7 +623,7 @@ async function handle(sock, messageInfo) {
         react: { text: '⏰', key: message.key },
       });
       await kirimLaporanAdmin(sock, messageInfo, body, null, null);
-      bukaSesiChatAdmin(messageInfo);
+      bukaSesiChatAdmin(messageInfo, { from: 'lapor' });
       return sock.sendMessage(
         remoteJid,
         {
