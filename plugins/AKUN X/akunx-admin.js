@@ -13,6 +13,7 @@ const HELP = (p) => [
   `${p}mgbelum — member yang belum mendaftar akun X`,
   `${p}mgkickbelum — buat laporan kick untuk yang belum daftar`,
   `${p}mgpemilik akun — pemilik akun X`,
+  `${p}mgnomor 08xx / @tag — akun X milik nomor itu`,
   `${p}mgtambah @member akun1 akun2 — daftarkan atas nama member`,
   `${p}mglepas akun — lepas akun dari pemiliknya`,
   `${p}mgidgrup — JID grup ini`,
@@ -108,6 +109,44 @@ async function handle(sock, messageInfo) {
         return send(f.text, f.mentions);
       }
 
+      case 'mgnomor': {
+        // target: tag, atau nomor 08xx / 628xx / +62 8xx
+        let target = (Array.isArray(mentionedJid) && mentionedJid[0]) || null;
+        if (!target) {
+          let d = (content || '').replace(/\D/g, '');
+          if (d.startsWith('0')) d = '62' + d.slice(1);
+          if (d.length >= 10) target = `${d}@s.whatsapp.net`;
+        }
+        if (!target) return send(`Contoh: *${prefix}mgnomor 0812xxxx* atau *${prefix}mgnomor @member*`);
+        const t = String(target).replace(/:\d+(?=@)/, '');
+        const tw = { pn: t.endsWith('@s.whatsapp.net') ? t : null, lid: t.endsWith('@lid') ? t : null };
+        // lengkapi pn/lid dari daftar anggota grup WA
+        const inGroups = [];
+        for (const { gid, meta } of await memberMetas(sock)) {
+          const p = meta?.participants?.find((x) => matchP(x, tw));
+          if (!p) continue;
+          tw.pn = tw.pn || pnOf(p);
+          tw.lid = tw.lid || lidOf(p);
+          const fam = (cfg.waGroups || []).find((f) => f.jid === gid);
+          inGroups.push(`${meta?.subject || gid}${fam ? ` [${fam.family}]` : ''}${p.admin ? ' (admin)' : ''}`);
+        }
+        const owner = await core.findOwner(tw);
+        const label = tw.pn ? tw.pn.split('@')[0] : '@' + (tw.lid || t).split('@')[0];
+        const head = [`*Data ${label}*${owner?.name ? ` (${owner.name})` : ''}`, `Grup WA: ${inGroups.join(', ') || 'tidak ada di grup member'}`];
+        const accs = owner ? await core.ownerAccounts(owner.id) : [];
+        if (!accs.length) {
+          return send([...head, '', '⚠️ Belum mendaftarkan akun X.'].join('\n'), [tw.pn || tw.lid].filter(Boolean));
+        }
+        const lines = [];
+        for (const a of accs) {
+          const { groups } = await core.accountInfo(a.username);
+          lines.push(groups.length
+            ? `• @${a.username} — ✅ ada di ${groups.join(', ')}`
+            : `• @${a.username} — ❌ tidak terlihat di grup XChat${a.state === 'baru' ? ' (belum dicek)' : ` (${a.miss_count}x)`}`);
+        }
+        return send([...head, `Status: ${owner.status}`, '', `*Akun X (${accs.length})*`, ...lines].join('\n'), [tw.pn || tw.lid].filter(Boolean));
+      }
+
       case 'mgpemilik': {
         const u = util.normUser(args[0]);
         if (!u) return send(`Contoh: *${prefix}mgpemilik namaakun*`);
@@ -157,7 +196,7 @@ async function handle(sock, messageInfo) {
 
 export default {
   handle,
-  Commands: ['mg', 'mgmenu', 'mgidgrup', 'mgstatus', 'mgcek', 'mglaporan', 'mgbatal', 'mgkick', 'mgbelum', 'mgkickbelum', 'mgpemilik', 'mgtambah', 'mglepas'],
+  Commands: ['mg', 'mgmenu', 'mgidgrup', 'mgstatus', 'mgcek', 'mglaporan', 'mgbatal', 'mgkick', 'mgbelum', 'mgkickbelum', 'mgpemilik', 'mgnomor', 'mgtambah', 'mglepas'],
   OnlyPremium: false,
   OnlyOwner: false,
   limitDeduction: 0,
