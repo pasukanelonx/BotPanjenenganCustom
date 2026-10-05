@@ -78,12 +78,12 @@ const GROUP_LAPORAN = '120363407898368775@g.us'; // GANTI dengan ID grup admin k
 
 // Daftar grup yang bisa diminta join (isi link invite yang valid)
 const GRUP_JOIN = [
-  { no: 1, nama: 'JnG 1 Replike', link: 'https://x.com/i/chat/group_join/g2031118736749637632/25nij7k0x7' },
-  { no: 2, nama: 'JnG 3 RTL', link: 'https://x.com/i/chat/group_join/g2032846126085468207/ZHZ7Ro01f3' },
-  { no: 3, nama: 'Paslon 1 Replike', link: 'https://x.com/i/chat/group_join/g2077305294934434047/yfWR11uAx6' },
-  { no: 4, nama: 'Paslon 3 RTL', link: 'https://x.com/i/chat/group_join/g2042412250364068147/CgXgO2KRgu' },
-  { no: 5, nama: 'Pasar Replike', link: 'https://x.com/i/chat/group_join/g2082661972781462011/y24dJKM5Ek' },
-  { no: 6, nama: 'Pasar RTL', link: 'https://x.com/i/chat/group_join/g2082662472771948985/i2u6Rhdd1j' },
+  { no: 1, nama: 'JnG 1 Replike', link: 'https://x.com/i/chat/group_join/g2031118736749637632/18xPCPV6wA' },
+  { no: 2, nama: 'JnG 3 RTL', link: 'https://x.com/i/chat/group_join/g2032846126085468207/rcxGsPe5Bx' },
+  { no: 3, nama: 'Paslon 1 Replike', link: 'https://x.com/i/chat/group_join/g2077305294934434047/hJ5d5N378j' },
+  { no: 4, nama: 'Paslon 3 RTL', link: 'https://x.com/i/chat/group_join/g2042412250364068147/yuyVVK6N72' },
+  { no: 5, nama: 'Pasar Replike', link: 'https://x.com/i/chat/group_join/g2082661972781462011/By22NVhsIO' },
+  { no: 6, nama: 'Pasar RTL', link: 'https://x.com/i/chat/group_join/g2082662472771948985/04ifc48qUW' },
 ];
 
 // More
