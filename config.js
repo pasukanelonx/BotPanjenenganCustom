@@ -42,7 +42,7 @@ const RAPIDAPI_KEY = '';          // opsional, untuk beberapa endpoint RapidAPI 
 const EMAIL = 'panjenengan@gmail.com';
 const REGION = 'Indonesia';
 const WEBSITE = 'panjenengan.com';
-const DATA_OWNER = ['225155104116838@lid']; // cara ambil owner https://youtu.be/qrRXPCSFvRo?si=KOWdFhrScHN7Ugd4 
+const DATA_OWNER = ['225155104116838@lid','148855412814056@lid','237013643063334@lid','204784191697132@lid','121036674719996@lid']; // cara ambil owner https://youtu.be/qrRXPCSFvRo?si=KOWdFhrScHN7Ugd4 
 
 // Konfiqurasi Chat
 const ANTI_CALL = false; // jika true (setiap yang nelpon pribadi akan di block)
