@@ -1,130 +1,53 @@
-# 🛠️ Informasi Script
+# Add-on Member Guard untuk BotPanjenenganCustom
 
-```plaintext
-╔═════════════════════════════════╗
-║ 🛠️ Informasi Script
-╠═════════════════════════════════╣
-║ 📦 Version    : 5.3.0
-║ 👨‍💻 Developer  : Mail bin Mail
-║ 🌐 Website    : autoresbot.com
-║ 💻 GitHub     : github.com/autoresbot/resbot-md
-╚═════════════════════════════════╝
+Hanya **menambah file baru**, tidak ada file bot yang diubah:
+
+```
+lib/memberGuard.js              jembatan ke API member-guard
+handle/memberGuard.js           sesi pendaftaran di chat pribadi + pengirim laporan ke grup admin
+plugins/AKUN X/akunx.js         perintah member
+plugins/AKUN X/akunx-admin.js   perintah admin
 ```
 
-```javascript
-⚠️ Peringatan:
-SCRIPT INI TIDAK BOLEH DIPERJUALBELIKAN.
-[👉 autoresbot.com](https://autoresbot.com)
-```
+Bot WA tidak perlu berada di VPS yang sama. Add-on menghubungi **API member-guard** lewat internet (port `API_PORT`, dijaga `API_KEY`).
 
-# API USE from api.autoresbot.com
+## Pasang
 
-Dokumentasi penggunaan API dari **api.autoresbot.com** untuk integrasi ke dalam proyek Anda.
+1. Di VPS member-guard: isi `API_PORT=8787` dan `API_KEY=` (buat dengan `openssl rand -hex 24`) di `.env`, buka port di firewall (`ufw allow 8787/tcp` kalau pakai ufw), lalu `pm2 restart guard-tg`.
+2. Salin keempat file ke folder bot WA dengan struktur yang sama.
+3. Di Railway → service bot → **Variables**, tambahkan:
+   - `MEMBER_GUARD_URL` = `http://IP_VPS:8787`
+   - `MEMBER_GUARD_KEY` = isi `API_KEY` yang sama
+   Jangan tulis kunci di file, karena repo bot bersifat publik.
+4. Commit & push file add-on ke GitHub, Railway akan deploy ulang.
+5. Di grup member, kirim `.mgidgrup` (owner / admin grup), salin JID-nya ke `WA_GROUP_JID` di `.env` member-guard, lalu `pm2 restart guard-tg`.
+6. Pastikan bot adalah **admin di grup member**. Laporan kick dikirim ke `GROUP_LAPORAN` di `config.js` bot (atau `WA_ADMIN_GROUP_JID`).
 
-## Instalasi
+## Perintah member (chat pribadi ke bot)
 
-Pastikan Anda sudah menginstal package `api-autoresbot` melalui npm:
+| Perintah | Fungsi |
+|---|---|
+| `.daftar` | bot meminta username; balas langsung (tanpa titik), boleh beberapa sekaligus |
+| `.daftar akun1 akun2` | daftar langsung |
+| `.akunku` | lihat akun & statusnya |
+| `.hapusakun akun` | hapus akun sendiri |
 
-```bash
-npm install api-autoresbot
-```
+Hanya anggota grup member yang bisa mendaftar. Akun yang sudah diklaim orang lain ditolak dan admin diberi tahu.
 
-## Menggunakan API
+## Perintah admin
 
-```javascript
-const response = await api.get('/api/random/zikir');
-```
+Admin = owner bot, anggota grup admin (`GROUP_LAPORAN`), admin grup member, atau nomor di `WA_ADMIN_NUMBERS`.
 
-## Menggunakan API dengan Parameter
-
-```javascript
-const response = await api.get('/api/gemini', { text: content });
-```
-
-## Menggunakan API dengan response buffer
-
-```javascript
-const response = await api.getBuffer('/api/maker/attp2', { text: content });
-```
-
-## Menggunakan API untuk upload media sementara
-
-```javascript
-const response = await api.tmpUpload(mediaPath);
-```
-
-# =======================
-
-## Mengirim pesan teks
-
-```javascript
-await sock.sendMessage(remoteJid, { text: 'Example' });
-await sock.sendMessage(remoteJid, { text: 'Example' }, { quoted: message });
-```
-
-## Mengirim gambar dari URL dan buffer
-
-```javascript
-await sock.sendMessage(remoteJid, {
-  image: { url: 'https://example.com/tes.jpg' },
-  caption: `Caption`,
-});
-await sock.sendMessage(
-  remoteJid,
-  { image: { url: 'https://example.com/tes.jpg' }, caption: `Caption` },
-  { quoted: message },
-);
-
-await sock.sendMessage(remoteJid, { image: buffer, caption: `Caption` });
-await sock.sendMessage(remoteJid, { image: buffer, caption: `Caption` }, { quoted: message });
-```
-
-## Mengirim audio dari URL dan buffer
-
-```javascript
-await sock.sendMessage(
-  remoteJid,
-  { audio: { url: '' }, mimetype: 'audio/mp4' },
-  { quoted: message },
-);
-await sock.sendMessage(remoteJid, { audio: bufferAudio }, { quoted: message });
-```
-
-## Menambahkan reaction pada pesan
-
-```javascript
-await sock.sendMessage(remoteJid, { react: { text: '⏰', key: message.key } });
-```
-
-## Mengirim pesan terusan
-
-```javascript
-sock.sendMessage(
-  remoteJid,
-  {
-    text: `Ini adalah contoh pesan terusan`,
-    contextInfo: {
-      forwardingScore: 7,
-      isForwarded: true,
-      mentionedJid: [remoteJid],
-    },
-  },
-  { quoted: message },
-);
-```
-
-## Menggunakan cache untuk metadata grup
-
-```javascript
-import { getGroupMetadata, getProfilePictureUrl, groupFetchAllParticipating } from './cache.js';
-
-getGroupMetadata(sock, remoteJid);
-```
-
-## Handler untuk proses handle (folder handle)
-
-```javascript
-return false; // Menghentikan proses handler tanpa lanjut ke plugin
-return true; // Menghentikan proses handler dan lanjut ke plugin
-return; // Lanjut ke handler lain dan plugin
-```
+| Perintah | Fungsi |
+|---|---|
+| `.mg` | daftar perintah |
+| `.mgstatus` | ringkasan |
+| `.mgcek` | scan grup DM X sekarang (dijalankan guard-tg) |
+| `.mglaporan [id]` | tampilkan laporan |
+| `.mgkick ID` / `.mgkick ID -2 -5` / `.mgkick ID paksa` | eksekusi kick |
+| `.mgbatal ID` | batalkan laporan |
+| `.mgbelum` / `.mgkickbelum` | member yang belum mendaftar / buat laporan kick-nya |
+| `.mgpemilik akun` | pemilik akun X |
+| `.mgtambah @member akun1 akun2` | daftarkan atas nama member |
+| `.mglepas akun` | lepas akun dari pemiliknya |
+| `.mgidgrup` | JID grup tempat perintah dikirim |
