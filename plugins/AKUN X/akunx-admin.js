@@ -12,8 +12,9 @@ const HELP = (p) => [
   `${p}mgbatal ID — batalkan laporan`,
   `${p}mgbelum — member WA yang belum mendaftar akun X`,
   `${p}mgliar [grup] — akun di grup DM XChat yang belum didaftarkan siapa pun`,
-  `${p}mgcentang [grup] — anggota grup DM tanpa centang`,
+  `${p}mgcentang [grup] — anggota grup DM tanpa centang (${p}mgcentang cek = pastikan lewat profil)`,
   `${p}mgsuspend — cek akun suspend di grup DM`,
+  `${p}mgabsen [tanggal] — member yang tidak ikut konten 2 hari berturut-turut`,
   `${p}mgkickbelum — buat laporan kick untuk yang belum daftar`,
   `${p}mgpemilik akun — pemilik akun X`,
   `${p}mgnomor 08xx / @tag — akun X milik nomor itu`,
@@ -194,6 +195,15 @@ async function handle(sock, messageInfo) {
         return;
       }
 
+      case 'mgabsen': {
+        let d = args[0] || null;
+        const m = d && d.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+        if (m) d = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+        if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return send(`Contoh: *${prefix}mgabsen* atau *${prefix}mgabsen 08/10/2026*`);
+        const j = await core.addJob('absen', { ymd: d, by });
+        return send(j.duplicate ? 'Cek tidak ikut konten sudah dalam antrean.' : '📵 Cek member yang tidak ikut konten 2 hari berturut-turut masuk antrean. Hasilnya dikirim ke grup admin.');
+      }
+
       case 'mgsuspend': {
         const j = await core.addJob('suspend', { by });
         return send(j.duplicate ? 'Cek suspend sudah dalam antrean.' : '🔎 Cek akun suspend di semua grup DM masuk antrean. Hasilnya dikirim ke grup admin.');
@@ -201,6 +211,10 @@ async function handle(sock, messageInfo) {
 
       case 'mgcentang': {
         const g = (args[0] || '').toLowerCase();
+        if (g === 'cek') {
+          const j = await core.addJob('centang', { by });
+          return send(j.duplicate ? 'Konfirmasi centang sudah dalam antrean.' : '☑️ Konfirmasi centang lewat profil masuk antrean. Hasilnya dikirim ke Telegram.');
+        }
         const rows = await core.unverifiedMembers(g || null);
         if (!rows.length) return send(`✅ Tidak ada anggota tanpa centang${g ? ` di ${g}` : ''} (atau status centang belum terbaca).`);
         const per = {};
@@ -374,7 +388,7 @@ async function handle(sock, messageInfo) {
 
 export default {
   handle,
-  Commands: ['mg', 'mgmenu', 'mgidgrup', 'mgstatus', 'mgcek', 'mglaporan', 'mgbatal', 'mgkick', 'mgbelum', 'mgkickbelum', 'mgpemilik', 'mgnomor', 'mgtambah', 'mglepas', 'mgbl', 'mgblx', 'mgblwa', 'mgunbl', 'mgxkick', 'mgrekap', 'mgliar', 'mgcentang', 'mgsuspend'],
+  Commands: ['mg', 'mgmenu', 'mgidgrup', 'mgstatus', 'mgcek', 'mglaporan', 'mgbatal', 'mgkick', 'mgbelum', 'mgkickbelum', 'mgpemilik', 'mgnomor', 'mgtambah', 'mglepas', 'mgbl', 'mgblx', 'mgblwa', 'mgunbl', 'mgxkick', 'mgrekap', 'mgliar', 'mgcentang', 'mgsuspend', 'mgabsen'],
   OnlyPremium: false,
   OnlyOwner: false,
   limitDeduction: 0,
