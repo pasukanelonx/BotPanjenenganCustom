@@ -135,7 +135,7 @@ async function handle(sock, messageInfo) {
           const f = await core.formatReportWa(report);
           return send(
             `${f.text}\n\nJalankan: *${prefix}mgxkick ${report.id}*\nKecualikan nomor urut: *${prefix}mgxkick ${report.id} -2 -5*\nBatalkan: *${prefix}mgbatal ${report.id}*` +
-              `\n\nMaks ${cfg.xKickMax || 15} akun per sesi, ±30 detik per akun. Hasil dikirim ke grup admin.` + (extra ? `\n\n${extra}` : '')
+              (cfg.xKickAutoContinue ? `\n\nDikerjakan sampai habis: per gelombang ${cfg.xKickMax || 15} akun, jeda ${Math.round((cfg.xKickBatchPauseSec ?? 120) / 60)} menit antar gelombang, ±30 detik per akun. Hasil dikirim ke grup admin.` : `\n\nMaks ${cfg.xKickMax || 15} akun per sesi, ±30 detik per akun. Hasil dikirim ke grup admin.`) + (extra ? `\n\n${extra}` : '')
           );
         };
         // tanpa argumen: panduan
@@ -172,7 +172,7 @@ async function handle(sock, messageInfo) {
           const { report, error } = await core.xKickReport(g && g !== 'semua' ? g : null, 'suspend');
           if (error) return send(`❌ ${error}`);
           if (!report) return send(`✅ Tidak ada akun suspend${g && g !== 'semua' ? ` di ${g}` : ''} menurut cek terakhir. Jalankan *${prefix}mgsuspend* untuk cek ulang.`);
-          return showReport(report, `ℹ️ ${report.items.length} akun suspend. Per sesi maks ${cfg.xKickMax || 15}.`);
+          return showReport(report, `ℹ️ ${report.items.length} akun suspend.`);
         }
         // .mgxkick tanpacentang [grup] -> anggota tanpa centang
         if (key === 'tanpacentang') {
@@ -180,7 +180,7 @@ async function handle(sock, messageInfo) {
           const { report, error } = await core.xKickReport(g && g !== 'semua' ? g : null, 'tanpacentang');
           if (error) return send(`❌ ${error}`);
           if (!report) return send(`✅ Tidak ada anggota tanpa centang${g && g !== 'semua' ? ` di ${g}` : ''} (menurut scan terakhir).`);
-          return showReport(report, `ℹ️ ${report.items.length} akun. Per sesi maks ${cfg.xKickMax || 15}; jalankan beberapa kali sampai habis.`);
+          return showReport(report, `ℹ️ ${report.items.length} akun.`);
         }
         // .mgxkick semua / .mgxkick jngrl -> calon kick
         if (args.length === 1) {
@@ -212,7 +212,8 @@ async function handle(sock, messageInfo) {
         if (!rows.length) return send(`👍 Tidak ada akun liar${label ? ` di ${label}` : ''} (atau belum ada scan sukses).`);
         const lines = rows.map((r, i) => `${i + 1}. @${r.username} [${keys ? String(r.groups).split(',').filter((g) => keys.includes(g)).join(',') : r.groups}]`);
         const head = `*Akun di grup DM yang belum didaftarkan (${rows.length})*${label ? ` — ${label}` : ''}`;
-        const tip = `\nDaftarkan atas nama pemilik: *${prefix}mgtambah @member akun*\nKeluarkan dari grup: *${prefix}mgxkick jngrl akun*`;
+        const kk = isKey ? a0 : sc ? sc.keys[0] : 'jngrl';
+        const tip = `\nDaftarkan atas nama pemilik: *${prefix}mgtambah @member akun*\nKeluarkan dari grup: *${prefix}mgxkick ${kk} akun*` + (keys && keys.length > 1 ? ` (grup lain: ${keys.slice(1).join(', ')})` : '');
         for (let i = 0; i < lines.length; i += 80) await send((i ? '' : head + '\n') + lines.slice(i, i + 80).join('\n') + (i + 80 >= lines.length ? '\n' + tip : ''));
         return;
       }
