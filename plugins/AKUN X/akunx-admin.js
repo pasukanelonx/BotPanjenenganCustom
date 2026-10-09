@@ -8,7 +8,7 @@ const HELP = (p) => [
   `${p}mgstatus — ringkasan data`,
   `${p}mgcek — scan grup DM X sekarang`,
   `${p}mglaporan [id] — tampilkan laporan kick`,
-  `${p}mgkick ID [-no …] [paksa] — eksekusi kick`,
+  `${p}mgkick ID [grup|komunitas] [-no …] [paksa] — eksekusi kick (komunitas = keluar dari semua grup)`,
   `${p}mgbatal ID — batalkan laporan`,
   `${p}mgbelum [grup|semua] — member WA yang belum mendaftar (di grup WA: hanya grup itu)`,
   `${p}mgliar [grup|semua] — akun di grup DM XChat yang belum didaftarkan (di grup WA: hanya grup XChat pasangannya)`,
@@ -326,7 +326,11 @@ async function handle(sock, messageInfo) {
         const rep = await core.createReport('belumdaftar', list);
         await core.log(by, 'kickbelum', rep.id);
         const f = await core.formatReportWa(rep);
-        return send(f.text, f.mentions);
+        return send(f.text +
+          `\n\n*Pilih cara kick:*\n` +
+          `• *${prefix}mgkick ${rep.id} grup* — keluarkan dari grup WA${sc ? ` ${sc.family}` : ''} saja\n` +
+          `• *${prefix}mgkick ${rep.id} komunitas* — keluarkan dari komunitas (semua grup sekaligus)\n` +
+          `Kecualikan nomor: tambahkan *-3 -7*. Lebih dari ${cfg.maxKickPerRun || 20} orang: tambahkan *paksa*.`, f.mentions);
       }
 
       case 'mgnomor': {
