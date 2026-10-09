@@ -146,6 +146,7 @@ async function handle(sock, messageInfo) {
             `${prefix}mgxkick semua — calon kick di semua grup`,
             `${prefix}mgxkick jngrl akun1 akun2 — kick akun tertentu di grup jngrl`,
             `${prefix}mgxkick semua akun1 — kick akun1 di semua grup tempat dia ada`,
+            `${prefix}mgxkick liar — semua akun liar (hasil ${prefix}mgliar) di grup WA ini; atau: liar jngrl / liar semua`,
             `${prefix}mgxkick tanpacentang jngrl — kick anggota tanpa centang (atau: semua)`,
             `${prefix}mgxkick suspend — kick akun suspend (setelah ${prefix}mgsuspend)`,
             `${prefix}mgxkick ID — jalankan laporan (setelah dicek)`,
@@ -182,6 +183,25 @@ async function handle(sock, messageInfo) {
           if (!report) return send(`✅ Tidak ada anggota tanpa centang${g && g !== 'semua' ? ` di ${g}` : ''} (menurut scan terakhir).`);
           return showReport(report, `ℹ️ ${report.items.length} akun.`);
         }
+        // .mgxkick liar [grup|keluarga|semua]  atau  .mgxkick jngrl liar/semua
+        //   -> semua akun liar (belum didaftarkan) hasil .mgliar, tanpa mengetik username satu per satu
+        const LIAR_WORDS = ['liar', 'semua', 'all'];
+        if (key === 'liar' || (keys.includes(key) && args.length === 2 && LIAR_WORDS.includes(args[1].toLowerCase()))) {
+          const a1 = key === 'liar' ? (args[1] || '').toLowerCase() : key;
+          const isKey = keys.includes(a1);
+          const sc = isKey ? null : scopeOf(cfg, remoteJid, isGroup, a1);
+          const gk = isKey ? [a1] : sc ? sc.keys : null; // null = semua grup
+          let rows = await core.liarAccounts();
+          if (gk) rows = rows.filter((r) => String(r.groups || '').split(',').some((g) => gk.includes(g)));
+          if (!rows.length) return send(`👍 Tidak ada akun liar${gk ? ` di ${gk.join(', ')}` : ''} (menurut scan terakhir).`);
+          // satu grup XChat: kick di grup itu saja; keluarga/semua: kick di semua grup tempat akun itu ada
+          const r = await core.xKickManual(isKey ? a1 : 'semua', rows.map((x) => x.username), by);
+          if (!r.report) return send(`❌ ${r.error}`);
+          return showReport(r.report, [
+            `ℹ️ ${rows.length} akun liar${gk ? ` di ${gk.join(', ')}` : ''} (belum didaftarkan siapa pun, menurut scan terakhir).`,
+            r.blocked?.length ? `⚠️ Dilindungi, tidak ikut: ${r.blocked.join(', ')}` : '',
+          ].filter(Boolean).join('\n'));
+        }
         // .mgxkick semua / .mgxkick jngrl -> calon kick
         if (args.length === 1) {
           const { report, skippedFamilies, error } = await core.xKickReport(key === 'semua' || key === 'all' ? null : key);
@@ -191,6 +211,9 @@ async function handle(sock, messageInfo) {
           return showReport(report, warn);
         }
         // .mgxkick jngrl akun1 akun2 -> kick manual di satu grup;  .mgxkick semua akun1 -> di semua grup tempat akun itu ada
+        if (args.slice(1).some((a) => LIAR_WORDS.includes(a.toLowerCase()))) {
+          return send(`❌ "semua"/"liar" bukan username. Untuk semua akun liar: *${prefix}mgxkick liar* (di grup WA ini) atau *${prefix}mgxkick ${keys[0] || 'jngrl'} liar* (satu grup XChat).`);
+        }
         const r = await core.xKickManual(key, args.slice(1), by);
         if (!r.report) return send(`❌ ${r.error}`);
         return showReport(r.report, [
@@ -213,7 +236,7 @@ async function handle(sock, messageInfo) {
         const lines = rows.map((r, i) => `${i + 1}. @${r.username} [${keys ? String(r.groups).split(',').filter((g) => keys.includes(g)).join(',') : r.groups}]`);
         const head = `*Akun di grup DM yang belum didaftarkan (${rows.length})*${label ? ` — ${label}` : ''}`;
         const kk = isKey ? a0 : sc ? sc.keys[0] : 'jngrl';
-        const tip = `\nDaftarkan atas nama pemilik: *${prefix}mgtambah @member akun*\nKeluarkan dari grup: *${prefix}mgxkick ${kk} akun*` + (keys && keys.length > 1 ? ` (grup lain: ${keys.slice(1).join(', ')})` : '');
+        const tip = `\nDaftarkan atas nama pemilik: *${prefix}mgtambah @member akun*\nKeluarkan semua yang di atas: *${prefix}mgxkick liar${isKey ? ' ' + a0 : sc ? '' : ' semua'}*\nSatu-satu: *${prefix}mgxkick ${kk} akun*`;
         for (let i = 0; i < lines.length; i += 80) await send((i ? '' : head + '\n') + lines.slice(i, i + 80).join('\n') + (i + 80 >= lines.length ? '\n' + tip : ''));
         return;
       }
