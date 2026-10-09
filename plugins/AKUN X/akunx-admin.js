@@ -1,6 +1,6 @@
 // Perintah admin member-guard: status, scan, laporan, kick, dll.
 import {
-  mg, whoIs, isMgAdmin, groupMeta, memberGroups, memberMetas, findMember, syncWa, matchP, pnOf, lidOf, itemsUnregistered, executeKick, itemTag, ownerLabel,
+  mg, whoIs, isMgAdmin, groupMeta, memberGroups, memberMetas, findMember, syncWa, matchP, pnOf, lidOf, itemsUnregistered, itemsUnregisteredCommunity, executeKick, itemTag, ownerLabel,
 } from '../../lib/memberGuard.js';
 
 const HELP = (p) => [
@@ -14,7 +14,9 @@ const HELP = (p) => [
   `${p}mgliar [grup|semua] — akun di grup DM XChat yang belum didaftarkan (di grup WA: hanya grup XChat pasangannya)`,
   `${p}mgcentang [grup] — anggota grup DM tanpa centang (${p}mgcentang cek = pastikan lewat profil)`,
   `${p}mgsuspend — cek akun suspend di grup DM`,
+  `${p}mgket Ijin user1 [tanggal] [grup] — ubah keterangan di sheet absensi (- = kosongkan)`,
   `${p}mgabsen — pilih grup lalu cek member yang tidak ikut konten 2 hari (${p}mgabsen 1 3 | ${p}mgabsen semua)`,
+  `${p}mgkickkomunitas — anggota komunitas yang belum daftar → laporan kick dari komunitas`,
   `${p}mgkickbelum [grup|semua] — laporan kick yang belum daftar (di grup WA: hanya grup itu)`,
   `${p}mgpemilik akun — pemilik akun X`,
   `${p}mgnomor 08xx / @tag — akun X milik nomor itu`,
@@ -241,6 +243,61 @@ async function handle(sock, messageInfo) {
         return;
       }
 
+      case 'mgket': {
+        // Ubah keterangan di sheet absensi (Jenvora):
+        //   .mgket Ijin budi123 ani_x            -> hari ini; di grup WA: hanya tab grup XChat pasangannya
+        //   .mgket RTN OK budi123 08/10           -> tanggal tertentu ("kemarin" juga bisa)
+        //   .mgket - budi123                      -> kosongkan sel
+        //   .mgket Ijin budi123 jngrl / semua     -> batasi ke satu grup XChat / semua tab
+        const help = `*Ubah keterangan di sheet absensi*\n` +
+          `${prefix}mgket Ijin user1 user2 — hari ini\n` +
+          `${prefix}mgket RTN 08/10 user1 — tanggal tertentu (atau: kemarin)\n` +
+          `${prefix}mgket - user1 — kosongkan sel\n` +
+          `${prefix}mgket Ijin user1 jngrl — hanya tab grup itu (atau: semua)\n\n` +
+          `Pilihan: Konten, Rata, Ijin, RTN, RTN OK, Parkir, X, GB, KICK, NEW`;
+        if (!args.length) return send(help);
+        let rest = [...args];
+        let status = rest.shift();
+        if (/^rtn$/i.test(status) && /^ok$/i.test(rest[0] || '')) { status = 'RTN OK'; rest.shift(); }
+        let date = null;
+        let keysArg = null;
+        let all = false;
+        const users = [];
+        const xk = cfg.xGroupKeys || [];
+        const now = new Date(Date.now() + 7 * 3600e3);
+        for (const a of rest) {
+          const al = a.toLowerCase();
+          let m;
+          if (al === 'kemarin') {
+            const k = new Date(now.getTime() - 86400e3);
+            date = `${String(k.getUTCDate()).padStart(2, '0')}/${String(k.getUTCMonth() + 1).padStart(2, '0')}/${k.getUTCFullYear()}`;
+          } else if ((m = a.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?$/))) {
+            date = `${m[1].padStart(2, '0')}/${m[2].padStart(2, '0')}/${m[3] || now.getUTCFullYear()}`;
+          } else if (xk.includes(al)) {
+            keysArg = [...(keysArg || []), al];
+          } else if (al === 'semua' || al === 'all') {
+            all = true;
+          } else {
+            const u = util.normUser(a);
+            if (u) users.push(u);
+            else return send(`❌ "${a}" bukan username/tanggal/grup yang dikenal.\n\n${help}`);
+          }
+        }
+        if (!users.length) return send(`❌ Username belum diisi.\n\n${help}`);
+        const sc = all || keysArg ? null : scopeOf(cfg, remoteJid, isGroup, '');
+        const keys = keysArg || (sc ? sc.keys : null);
+        const r = await core.absenSet(status, users, date, keys);
+        if (!r?.ok) return send(`❌ ${r?.error || 'gagal'}`);
+        const lines = (r.updated || []).map((u) => `• @${u.user} — ${u.sheet}: ${u.old || '(kosong)'} → *${u.now || '(kosong)'}*`);
+        return send(
+          `📝 *Keterangan ${r.date}* ${keys ? `(${keys.join(', ')})` : '(semua tab)'}\n` +
+          (lines.length ? lines.join('\n') : '_Tidak ada sel yang diubah._') +
+          (r.notFound?.length ? `\n\n⚠️ Tidak ditemukan${keys ? ' di tab grup ini' : ''}: ${r.notFound.map((u) => '@' + u).join(', ')}` +
+            (keys ? `\n_Coba tambahkan *semua* untuk mencari di semua tab._` : '') : '') +
+          (r.missingDate?.length ? `\n⚠️ Kolom tanggal ${r.date} belum ada di: ${r.missingDate.join(', ')}` : '')
+        );
+      }
+
       case 'mgabsen': {
         // .mgabsen            -> daftar grup + cara memilih (tidak langsung jalan)
         // .mgabsen 1 3        -> cek grup nomor 1 dan 3 (atau: paslon1rl jngrl)
@@ -331,6 +388,21 @@ async function handle(sock, messageInfo) {
           `• *${prefix}mgkick ${rep.id} grup* — keluarkan dari grup WA${sc ? ` ${sc.family}` : ''} saja\n` +
           `• *${prefix}mgkick ${rep.id} komunitas* — keluarkan dari komunitas (semua grup sekaligus)\n` +
           `Kecualikan nomor: tambahkan *-3 -7*. Lebih dari ${cfg.maxKickPerRun || 20} orang: tambahkan *paksa*.`, f.mentions);
+      }
+
+      case 'mgkickkomunitas': {
+        // anggota komunitas (dari grup pengumuman) yang belum mendaftarkan akun X -> laporan kick dari komunitas
+        await send('⏳ Membaca anggota komunitas…');
+        const r = await itemsUnregisteredCommunity(sock);
+        if (r.error) return send(`❌ ${r.error}`);
+        if (!r.items.length) return send(`👍 Semua ${r.scanned} anggota komunitas sudah mendaftarkan akun X.`);
+        const rep = await core.createReport('komunitas', r.items);
+        await core.log(by, 'kickkomunitas', rep.id);
+        const f = await core.formatReportWa(rep);
+        return send(
+          `🏘️ *Anggota KOMUNITAS belum mendaftar* (${r.items.length} dari ${r.scanned}, sumber: ${r.sources.join(', ')})\n\n` + f.text +
+          `\n\n*Jalankan:* *${prefix}mgkick ${rep.id}${r.items.length > (cfg.maxKickPerRun || 20) ? ' paksa' : ''}* — keluar dari komunitas & semua grupnya\n` +
+          `Kecualikan nomor: tambahkan *-3 -7*.\n⚠️ Nomor bot harus *admin komunitas*.`, f.mentions);
       }
 
       case 'mgnomor': {
@@ -472,7 +544,7 @@ async function handle(sock, messageInfo) {
 
 export default {
   handle,
-  Commands: ['mg', 'mgmenu', 'mgidgrup', 'mgstatus', 'mgcek', 'mglaporan', 'mgbatal', 'mgkick', 'mgbelum', 'mgkickbelum', 'mgpemilik', 'mgnomor', 'mgtambah', 'mglepas', 'mgbl', 'mgblx', 'mgblwa', 'mgunbl', 'mgxkick', 'mgrekap', 'mgliar', 'mgcentang', 'mgsuspend', 'mgabsen'],
+  Commands: ['mg', 'mgmenu', 'mgidgrup', 'mgstatus', 'mgcek', 'mglaporan', 'mgbatal', 'mgkick', 'mgbelum', 'mgkickbelum', 'mgpemilik', 'mgnomor', 'mgtambah', 'mglepas', 'mgbl', 'mgblx', 'mgblwa', 'mgunbl', 'mgxkick', 'mgrekap', 'mgliar', 'mgcentang', 'mgsuspend', 'mgabsen', 'mgket', 'mgkickkomunitas'],
   OnlyPremium: false,
   OnlyOwner: false,
   limitDeduction: 0,

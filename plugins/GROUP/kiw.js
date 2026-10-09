@@ -118,9 +118,10 @@ async function cekSyaratJoin(sock, messageInfo, input) {
     console.error('[kiw join] member-guard:', e.message);
     return { ok: false, keep: false, text: '_⚠️ Pengecekan akun sedang bermasalah, link belum bisa dikirim. Coba lagi nanti atau hubungi admin._' };
   }
-  const username = util.normUser(input);
-  if (!username) {
-    return { ok: false, keep: true, text: '_Username tidak valid._\nKetik langsung username akunnya (tanpa .kiw).\nContoh: *username123*' };
+  // boleh banyak username sekaligus: pisah spasi, koma, atau baris baru; boleh pakai @ / link x.com
+  const { ok: names, bad } = util.parseUsers(input);
+  if (!names.length) {
+    return { ok: false, keep: true, text: '_Username tidak valid._\nKetik langsung username akunnya (tanpa .kiw). Boleh beberapa sekaligus, pisahkan dengan spasi/koma/baris baru.\nContoh: *username123*' };
   }
   try {
     const who = await whoIs(sock, messageInfo);
@@ -137,46 +138,46 @@ async function cekSyaratJoin(sock, messageInfo, input) {
           'Join grup WA-nya dulu, lalu ulangi *' + p + 'kiw join*.',
       };
     }
-
     // 2. nomor di-blacklist
     if (await core.isWaBlacklisted(who)) {
       return { ok: false, keep: false, text: '⛔ *Link tidak dikirim.*\nNomor ini tidak diizinkan. Hubungi admin jika merasa ini keliru.' };
     }
 
-    // 3. username terdaftar atas nomor pemohon
-    if (await core.isXBlacklisted(username)) {
-      return { ok: false, keep: false, text: `⛔ *Link tidak dikirim.*\nAkun *@${username}* tidak diizinkan masuk grup. Hubungi admin jika merasa ini keliru.` };
+    // 3. tiap username: terdaftar atas nomor pemohon dan tidak di-blacklist
+    const lolos = [];
+    const ditolak = [];
+    for (const username of names) {
+      if (await core.isXBlacklisted(username)) { ditolak.push(`@${username} — tidak diizinkan`); continue; }
+      const info = await core.accountInfo(username);
+      if (!info?.account) { ditolak.push(`@${username} — belum terdaftar`); continue; }
+      const o = info.owner;
+      const milikSendiri = o && ((who.pn && o.wa_pn === who.pn) || (who.lid && o.wa_lid === who.lid));
+      if (!milikSendiri) { ditolak.push(`@${username} — terdaftar atas nomor lain`); continue; }
+      if (o.status && o.status !== 'aktif') {
+        return { ok: false, keep: false, text: '⛔ *Link tidak dikirim.*\nStatus keanggotaanmu tidak aktif. Hubungi admin.' };
+      }
+      lolos.push(username);
     }
-    const info = await core.accountInfo(username);
-    if (!info?.account) {
+    for (const t of bad) ditolak.push(`${t} — bukan username yang valid`);
+
+    if (!lolos.length) {
       return {
         ok: false,
         keep: true,
         text:
-          `⚠️ *Akun @${username} belum terdaftar.*\n\n` +
-          `Link invite hanya dikirim untuk akun yang sudah didaftarkan.\n` +
-          `Daftarkan dulu lewat chat pribadi ke bot: *${p}daftar*\n` +
-          `Setelah itu ulangi *${p}kiw join*.\n\n` +
-          `_Atau ketik username lain yang sudah terdaftar. Ketik *selesai* untuk berhenti._`,
-      };
-    }
-    const o = info.owner;
-    const milikSendiri = o && ((who.pn && o.wa_pn === who.pn) || (who.lid && o.wa_lid === who.lid));
-    if (!milikSendiri) {
-      return {
-        ok: false,
-        keep: true,
-        text:
-          `⚠️ *Akun @${username} terdaftar atas nomor lain.*\n\n` +
-          `Link hanya dikirim ke pemilik akun yang terdaftar.\n` +
-          `Kalau ini akunmu, hubungi admin untuk memindahkan pendaftarannya.\n\n` +
+          `⚠️ *Link tidak dikirim.* Tidak ada akun yang memenuhi syarat:\n${ditolak.map((x) => '• ' + x).join('\n')}\n\n` +
+          `Link hanya untuk akun yang sudah didaftarkan atas nomormu. Daftarkan dulu lewat chat pribadi ke bot: *${p}daftar*\n` +
+          `Kalau akunmu terdaftar atas nomor lain, hubungi admin.\n\n` +
           `_Ketik username lain, atau *selesai* untuk berhenti._`,
       };
     }
-    if (o.status && o.status !== 'aktif') {
-      return { ok: false, keep: false, text: '⛔ *Link tidak dikirim.*\nStatus keanggotaanmu tidak aktif. Hubungi admin.' };
-    }
-    return { ok: true, username };
+    return {
+      ok: true,
+      username: lolos.join(', '),
+      note: ditolak.length
+        ? `⚠️ *Tidak ikut (${ditolak.length}):*\n${ditolak.map((x) => '• ' + x).join('\n')}\n_Daftarkan dulu lewat *${p}daftar*, lalu ulangi *${p}kiw join* untuk akun itu._`
+        : '',
+    };
   } catch (e) {
     console.error('[kiw join] cek:', e.message);
     return { ok: false, keep: false, text: '_⚠️ Pengecekan akun sedang bermasalah, link belum bisa dikirim. Coba lagi nanti atau hubungi admin._' };
@@ -476,6 +477,7 @@ export async function processKiwSession(sock, messageInfo) {
       return true;
     }
     const username = cek.username;
+    if (cek.note) await sock.sendMessage(remoteJid, { text: cek.note }, { quoted: message });
 
     setKiwSession(messageInfo, {
       mode: 'wait_join_grup',
