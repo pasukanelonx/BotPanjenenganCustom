@@ -10,12 +10,12 @@ const HELP = (p) => [
   `${p}mglaporan [id] — tampilkan laporan kick`,
   `${p}mgkick ID [-no …] [paksa] — eksekusi kick`,
   `${p}mgbatal ID — batalkan laporan`,
-  `${p}mgbelum — member WA yang belum mendaftar akun X`,
-  `${p}mgliar [grup] — akun di grup DM XChat yang belum didaftarkan siapa pun`,
+  `${p}mgbelum [grup|semua] — member WA yang belum mendaftar (di grup WA: hanya grup itu)`,
+  `${p}mgliar [grup|semua] — akun di grup DM XChat yang belum didaftarkan (di grup WA: hanya grup XChat pasangannya)`,
   `${p}mgcentang [grup] — anggota grup DM tanpa centang (${p}mgcentang cek = pastikan lewat profil)`,
   `${p}mgsuspend — cek akun suspend di grup DM`,
   `${p}mgabsen — pilih grup lalu cek member yang tidak ikut konten 2 hari (${p}mgabsen 1 3 | ${p}mgabsen semua)`,
-  `${p}mgkickbelum — buat laporan kick untuk yang belum daftar`,
+  `${p}mgkickbelum [grup|semua] — laporan kick yang belum daftar (di grup WA: hanya grup itu)`,
   `${p}mgpemilik akun — pemilik akun X`,
   `${p}mgnomor 08xx / @tag — akun X milik nomor itu`,
   `${p}mgtambah @member akun1 akun2 — daftarkan atas nama member`,
@@ -27,7 +27,7 @@ const HELP = (p) => [
   `${p}mgxkick jngrl akun1 akun2 — kick akun tertentu di grup itu`,
   `${p}mgxkick semua akun1 — kick akun1 di semua grup tempat dia ada`,
   `${p}mgxkick ID [-no …] — jalankan kick XChat`,
-  `${p}mgrekap [YYYY-MM-DD] — rekap link postingan ke spreadsheet`,
+  `${p}mgrekap [tanggal] [grup] — rekap link postingan ke spreadsheet`,
   '',
   '*Blacklist*',
   `${p}mgbl — daftar blacklist`,
@@ -35,6 +35,22 @@ const HELP = (p) => [
   `${p}mgblwa 08xx / @tag — blacklist nomor WA`,
   `${p}mgunbl akun / 08xx / @tag — hapus dari blacklist`,
 ].join('\n');
+
+/**
+ * Grup WA yang dimaksud: argumen (nama keluarga, mis. "paslon") atau grup tempat perintah diketik.
+ * "semua" = tanpa batas grup. Mengembalikan { family, jid, keys } atau null (= semua).
+ */
+function scopeOf(cfg, remoteJid, isGroup, arg) {
+  const groups = cfg.waGroups || [];
+  const a = String(arg || '').toLowerCase();
+  if (a === 'semua' || a === 'all') return null;
+  if (a) {
+    const g = groups.find((x) => x.family.toLowerCase() === a || (x.keys || []).includes(a));
+    if (g) return g;
+  }
+  if (isGroup) return groups.find((x) => x.jid === remoteJid) || null;
+  return null;
+}
 
 async function handle(sock, messageInfo) {
   const { remoteJid, message, content, command, prefix, isGroup, mentionedJid } = messageInfo;
@@ -184,12 +200,18 @@ async function handle(sock, messageInfo) {
       }
 
       case 'mgliar': {
-        const key = (args[0] || '').toLowerCase();
+        // .mgliar            -> di grup WA paslon: hanya grup XChat pasangan paslon; di grup admin: semua
+        // .mgliar paslon1rl  -> satu grup XChat   ·  .mgliar paslon -> keluarga grup  ·  .mgliar semua
+        const a0 = (args[0] || '').toLowerCase();
+        const isKey = (cfg.xGroupKeys || []).includes(a0);
+        const sc = isKey ? null : scopeOf(cfg, remoteJid, isGroup, a0);
+        const keys = isKey ? [a0] : sc ? sc.keys : null;
         let rows = await core.liarAccounts();
-        if (key) rows = rows.filter((r) => String(r.groups || '').split(',').includes(key));
-        if (!rows.length) return send(`👍 Tidak ada akun liar${key ? ` di grup ${key}` : ''} (atau belum ada scan sukses).`);
-        const lines = rows.map((r, i) => `${i + 1}. @${r.username} [${r.groups}]`);
-        const head = `*Akun di grup DM yang belum didaftarkan (${rows.length})*${key ? ` — ${key}` : ''}`;
+        if (keys) rows = rows.filter((r) => String(r.groups || '').split(',').some((g) => keys.includes(g)));
+        const label = isKey ? a0 : sc ? `${sc.family} (${sc.keys.join(', ')})` : '';
+        if (!rows.length) return send(`👍 Tidak ada akun liar${label ? ` di ${label}` : ''} (atau belum ada scan sukses).`);
+        const lines = rows.map((r, i) => `${i + 1}. @${r.username} [${keys ? String(r.groups).split(',').filter((g) => keys.includes(g)).join(',') : r.groups}]`);
+        const head = `*Akun di grup DM yang belum didaftarkan (${rows.length})*${label ? ` — ${label}` : ''}`;
         const tip = `\nDaftarkan atas nama pemilik: *${prefix}mgtambah @member akun*\nKeluarkan dari grup: *${prefix}mgxkick jngrl akun*`;
         for (let i = 0; i < lines.length; i += 80) await send((i ? '' : head + '\n') + lines.slice(i, i + 80).join('\n') + (i + 80 >= lines.length ? '\n' + tip : ''));
         return;
@@ -249,20 +271,33 @@ async function handle(sock, messageInfo) {
       }
 
       case 'mgrekap': {
-        const d = args[0] || null;
-        if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return send(`Contoh: *${prefix}mgrekap* (hari ini) atau *${prefix}mgrekap 2026-10-07*`);
-        const j = await core.addJob('rekap', { ymd: d, by });
-        return send(j.duplicate ? 'Rekap link sudah dalam antrean.' : `📑 Rekap link${d ? ' ' + d : ' hari ini'} masuk antrean. Hasilnya dikirim ke Telegram.`);
+        // .mgrekap | .mgrekap paslon1rl | .mgrekap 07/10/2026 paslon1rl
+        let d = null;
+        let only = null;
+        for (const a of args) {
+          const m = a.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+          const ymd = m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : /^\d{4}-\d{2}-\d{2}$/.test(a) ? a : null;
+          if (ymd && !d) d = ymd;
+          else if ((cfg.xGroupKeys || []).includes(a.toLowerCase())) only = a.toLowerCase();
+          else return send(`Contoh: *${prefix}mgrekap* · *${prefix}mgrekap paslon1rl* · *${prefix}mgrekap 07/10/2026 paslon1rl*\nGrup: ${(cfg.xGroupKeys || []).join(', ')}`);
+        }
+        const j = await core.addJob('rekap', { ymd: d, by, only });
+        return send(j.duplicate ? 'Rekap link sudah dalam antrean.' : `📑 Rekap link${d ? ' ' + d : ' hari ini'} ${only ? `grup ${only}` : 'semua grup'} masuk antrean. Hasilnya dikirim ke sini dan Telegram.`);
       }
 
       case 'mgbelum':
       case 'mgkickbelum': {
+        // di grup WA paslon: hanya anggota grup itu. ".mgbelum semua" = semua grup; ".mgbelum jng" = grup WA jng
         if (!memberGroups(cfg).length) return send('WA_GROUP_JID belum diisi.');
-        const list = await itemsUnregistered(sock);
-        if (!list.length) return send('👍 Semua member sudah mendaftarkan akun X.');
+        const sc = scopeOf(cfg, remoteJid, isGroup, args[0]);
+        let list = await itemsUnregistered(sock, sc ? sc.jid : null);
+        if (sc) list = list.map((it) => ({ ...it, gid: sc.jid })); // kick hanya dari grup WA ini
+        const where = sc ? ` di grup WA ${sc.family}` : '';
+        if (!list.length) return send(`👍 Semua member${where} sudah mendaftarkan akun X.`);
         const mentions = list.map((it) => it.pn || it.lid).filter(Boolean);
         if (command === 'mgbelum') {
-          return send(`*Member belum mendaftar akun X (${list.length})*\n` + list.map((it, i) => `${i + 1}. ${itemTag(it)}`).join('\n'), mentions);
+          return send(`*Member belum mendaftar akun X${where} (${list.length})*\n` + list.map((it, i) => `${i + 1}. ${itemTag(it)}`).join('\n') +
+            (sc ? `\n\n_Semua grup: *${prefix}mgbelum semua*_` : ''), mentions);
         }
         const rep = await core.createReport('belumdaftar', list);
         await core.log(by, 'kickbelum', rep.id);

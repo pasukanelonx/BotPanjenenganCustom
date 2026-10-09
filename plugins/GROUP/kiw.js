@@ -11,6 +11,7 @@ import {
   saveReportRef,
   clearReportRefsByUser,
 } from '../../lib/kiwSession.js';
+import { mg, whoIs, findMember } from '../../lib/memberGuard.js';
 
 const JOIN_CHAT_TTL = 10 * 60 * 1000;
 
@@ -97,6 +98,89 @@ function menuText(prefix) {
     `• ${prefix}kiw join\n` +
     `• atau ketik: *1* / *2*`
   );
+}
+
+
+/**
+ * Syarat sebelum link invite grup DM dikirim (data dari member-guard):
+ *  1. nomor pemohon ada di grup/komunitas WA,
+ *  2. nomor tidak di-blacklist,
+ *  3. username sudah didaftarkan (.daftar), atas nomor pemohon sendiri, dan tidak di-blacklist.
+ * Mengembalikan { ok: true, username } atau { ok: false, text, keep } (keep = sesi tetap menunggu username lain).
+ */
+async function cekSyaratJoin(sock, messageInfo, input) {
+  const p = (config.prefix && config.prefix[0]) || '.';
+  let core;
+  let util;
+  try {
+    ({ core, util } = await mg());
+  } catch (e) {
+    console.error('[kiw join] member-guard:', e.message);
+    return { ok: false, keep: false, text: '_⚠️ Pengecekan akun sedang bermasalah, link belum bisa dikirim. Coba lagi nanti atau hubungi admin._' };
+  }
+  const username = util.normUser(input);
+  if (!username) {
+    return { ok: false, keep: true, text: '_Username tidak valid._\nKetik langsung username akunnya (tanpa .kiw).\nContoh: *username123*' };
+  }
+  try {
+    const who = await whoIs(sock, messageInfo);
+
+    // 1. harus anggota grup/komunitas WA
+    const member = await findMember(sock, who);
+    if (!member) {
+      return {
+        ok: false,
+        keep: false,
+        text:
+          '⛔ *Link tidak dikirim.*\n\n' +
+          'Nomor kamu belum bergabung di grup WhatsApp komunitas.\n' +
+          'Join grup WA-nya dulu, lalu ulangi *' + p + 'kiw join*.',
+      };
+    }
+
+    // 2. nomor di-blacklist
+    if (await core.isWaBlacklisted(who)) {
+      return { ok: false, keep: false, text: '⛔ *Link tidak dikirim.*\nNomor ini tidak diizinkan. Hubungi admin jika merasa ini keliru.' };
+    }
+
+    // 3. username terdaftar atas nomor pemohon
+    if (await core.isXBlacklisted(username)) {
+      return { ok: false, keep: false, text: `⛔ *Link tidak dikirim.*\nAkun *@${username}* tidak diizinkan masuk grup. Hubungi admin jika merasa ini keliru.` };
+    }
+    const info = await core.accountInfo(username);
+    if (!info?.account) {
+      return {
+        ok: false,
+        keep: true,
+        text:
+          `⚠️ *Akun @${username} belum terdaftar.*\n\n` +
+          `Link invite hanya dikirim untuk akun yang sudah didaftarkan.\n` +
+          `Daftarkan dulu lewat chat pribadi ke bot: *${p}daftar*\n` +
+          `Setelah itu ulangi *${p}kiw join*.\n\n` +
+          `_Atau ketik username lain yang sudah terdaftar. Ketik *selesai* untuk berhenti._`,
+      };
+    }
+    const o = info.owner;
+    const milikSendiri = o && ((who.pn && o.wa_pn === who.pn) || (who.lid && o.wa_lid === who.lid));
+    if (!milikSendiri) {
+      return {
+        ok: false,
+        keep: true,
+        text:
+          `⚠️ *Akun @${username} terdaftar atas nomor lain.*\n\n` +
+          `Link hanya dikirim ke pemilik akun yang terdaftar.\n` +
+          `Kalau ini akunmu, hubungi admin untuk memindahkan pendaftarannya.\n\n` +
+          `_Ketik username lain, atau *selesai* untuk berhenti._`,
+      };
+    }
+    if (o.status && o.status !== 'aktif') {
+      return { ok: false, keep: false, text: '⛔ *Link tidak dikirim.*\nStatus keanggotaanmu tidak aktif. Hubungi admin.' };
+    }
+    return { ok: true, username };
+  } catch (e) {
+    console.error('[kiw join] cek:', e.message);
+    return { ok: false, keep: false, text: '_⚠️ Pengecekan akun sedang bermasalah, link belum bisa dikirim. Coba lagi nanti atau hubungi admin._' };
+  }
 }
 
 function joinListText(username) {
@@ -378,20 +462,20 @@ export async function processKiwSession(sock, messageInfo) {
 
   // ----- TUNGGU USERNAME -----
   if (sess.mode === 'wait_join_username') {
-    const username = body.replace(/^@/, '').trim();
-    if (!username || username.length < 2) {
-      await sock.sendMessage(
-        remoteJid,
-        {
-          text:
-            '_Username tidak valid._\n' +
-            'Ketik langsung username akunnya (tanpa .kiw).\n' +
-            'Contoh: *username123*',
-        },
-        { quoted: message }
-      );
+    if (['selesai', 'batal', 'stop', 'close', 'end'].includes(bodyLower)) {
+      clearKiwSession(messageInfo);
+      await sock.sendMessage(remoteJid, { text: '_Permintaan join dibatalkan._' }, { quoted: message });
       return true;
     }
+    // cek syarat dulu: anggota grup WA, akun terdaftar atas nomor ini, tidak di-blacklist
+    const cek = await cekSyaratJoin(sock, messageInfo, body);
+    if (!cek.ok) {
+      if (cek.keep) setKiwSession(messageInfo, { mode: 'wait_join_username' });
+      else clearKiwSession(messageInfo);
+      await sock.sendMessage(remoteJid, { text: cek.text }, { quoted: message });
+      return true;
+    }
+    const username = cek.username;
 
     setKiwSession(messageInfo, {
       mode: 'wait_join_grup',
