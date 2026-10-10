@@ -49,7 +49,7 @@ export default {
         message,
         pushName,
         isGroup,
-        type,
+        type: rawType,
         fromMe,
       } = messageInfo;
 
@@ -69,6 +69,9 @@ export default {
       const adminName = 'Admin';
       // PENTING: pakai teks mentah, bukan messageInfo.content
       const body = getRawText(message);
+      let mm = message?.message || {};
+      for (const w of ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']) if (mm[w]?.message) mm = mm[w].message;
+      const type = ['sticker', 'audio', 'document', 'image', 'video'].find((t) => mm[t + 'Message']) || rawType;
 
       const header =
         `💬 *Balasan Admin*\n` +
