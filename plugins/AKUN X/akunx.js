@@ -28,21 +28,39 @@ async function handle(sock, messageInfo) {
     const who = await whoIs(sock, messageInfo);
     const owner = await core.findOwner(who);
 
+    const st = { ada: '✅ ada di grup DM', hilang: '❌ tidak terlihat di grup DM', baru: '⏳ belum dicek' };
+    const accs = owner ? await core.ownerAccounts(owner.id) : [];
+    const daftarBernomor = () => accs.map((a, i) => `${i + 1}. @${a.username} — ${st[a.state] || a.state}`).join('\n');
+
     if (command === 'akunku') {
-      const accs = owner ? await core.ownerAccounts(owner.id) : [];
       if (!accs.length) return send(`Belum ada akun X terdaftar. Daftar dengan *${prefix}daftar*`);
-      const st = { ada: '✅ ada di grup DM', hilang: '❌ tidak terlihat di grup DM', baru: '⏳ belum dicek' };
-      return send(`*Akun X milikmu (${accs.length})*\n` + accs.map((a) => `• @${a.username} — ${st[a.state] || a.state}`).join('\n') +
-        `\n\nTambah: *${prefix}daftar*\nHapus: *${prefix}hapusakun username*`);
+      return send(`*Akun X milikmu (${accs.length})*\n` + daftarBernomor() +
+        `\n\nTambah: *${prefix}daftar*\nHapus: *${prefix}hapusakun 2* (pakai nomor di atas, boleh beberapa: *${prefix}hapusakun 1 3*)`);
     }
 
     if (command === 'hapusakun') {
-      const u = util.normUser(args.split(/\s+/)[0]);
-      if (!u) return send(`Contoh: *${prefix}hapusakun namaakun*`);
-      if (!owner) return send('Kamu belum punya akun terdaftar.');
-      const ok = await core.removeAccount(u, owner.id);
-      if (ok) await core.log(who.pn || who.lid, 'hapus', u);
-      return send(ok ? `🗑️ @${u} dihapus dari daftarmu.` : `@${u} bukan akun terdaftarmu.`);
+      if (!owner || !accs.length) return send('Kamu belum punya akun terdaftar.');
+      const toks = args.split(/[\s,;]+/).filter(Boolean);
+      if (!toks.length) {
+        return send(`*Hapus akun X*\n${daftarBernomor()}\n\nKetik *${prefix}hapusakun* + nomornya.\nContoh: *${prefix}hapusakun 2* atau *${prefix}hapusakun 1 3*`);
+      }
+      const hasil = [];
+      const sudah = new Set();
+      for (const t of toks) {
+        let u;
+        if (/^\d+$/.test(t)) {
+          const a = accs[Number(t) - 1];
+          if (!a) { hasil.push(`⚠️ Nomor ${t} tidak ada (pilih 1–${accs.length})`); continue; }
+          u = a.username;
+        } else u = util.normUser(t);
+        if (!u || sudah.has(u)) continue;
+        sudah.add(u);
+        const ok = await core.removeAccount(u, owner.id);
+        if (ok) await core.log(who.pn || who.lid, 'hapus', u);
+        hasil.push(ok ? `🗑️ @${u} dihapus` : `⚠️ @${u} bukan akun terdaftarmu`);
+      }
+      const sisa = (await core.ownerAccounts(owner.id)).length;
+      return send(hasil.join('\n') + `\n\nSisa akunmu: ${sisa}. Cek dengan *${prefix}akunku*`);
     }
   } catch (e) {
     console.error('[member-guard] akunx:', e.message);
