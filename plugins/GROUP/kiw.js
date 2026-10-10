@@ -297,6 +297,42 @@ async function kirimLaporanAdmin(
   return sent;
 }
 
+/** Sticker / voice note / dokumen dari user -> grup admin. true = sudah ditangani. */
+async function teruskanMediaLain(sock, messageInfo, sess, mode) {
+  let m = messageInfo.message?.message || {};
+  for (const w of ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']) if (m[w]?.message) m = m[w].message;
+  const jenis = ['sticker', 'audio', 'document'].find((t) => m[t + 'Message']);
+  if (!jenis || !config.group_laporan) return false;
+  const { remoteJid, message, sender, pushName } = messageInfo;
+  const nama = pushName || 'Tanpa Nama';
+  const nomor = await resolveNomorWa(sock, messageInfo);
+  const waktu = moment().tz('Asia/Jakarta').format('DD/MM/YYYY HH:mm:ss');
+  const judul = mode === 'lapor' ? '📢 *LAPORAN USER*' : '💬 *BALASAN USER*';
+  const label = { sticker: 'sticker', audio: 'voice note', document: 'dokumen' }[jenis];
+  const teks = judul + '\n━━━━━━━━━━━━━━━━\n👤 *Nama:* ' + nama + '\n' + formatIdentitas(nomor, sender) + '\n🕒 *Waktu:* ' + waktu + '\n━━━━━━━━━━━━━━━━\n📎 Mengirim ' + label + ' (di bawah)\n_Balas pesan ini atau ' + label + '-nya untuk membalas ke user._';
+  const ref = { userJid: sender, userName: nama, userNumber: nomor || null };
+  try {
+    const buffer = fs.readFileSync(path.join('tmp', await downloadMedia(message)));
+    const a = await sock.sendMessage(config.group_laporan, { text: teks });
+    const d = m[jenis + 'Message'] || {};
+    const isi = jenis === 'sticker' ? { sticker: buffer } : jenis === 'audio' ? { audio: buffer, mimetype: d.mimetype || 'audio/ogg; codecs=opus', ptt: !!d.ptt } : { document: buffer, mimetype: d.mimetype || 'application/octet-stream', fileName: d.fileName || 'file' };
+    const b = await sock.sendMessage(config.group_laporan, isi);
+    for (const x of [a, b]) if (x?.key?.id) saveReportRef(x.key.id, ref);
+  } catch (e) {
+    console.error('[kiw] teruskan ' + jenis + ':', e.message);
+    await sock.sendMessage(remoteJid, { text: '_⚠️ ' + label + ' gagal diteruskan ke admin, coba kirim lagi._' }, { quoted: message });
+    return true;
+  }
+  if (mode === 'lapor') {
+    bukaSesiChatAdmin(messageInfo, { from: 'lapor' });
+    await sock.sendMessage(remoteJid, { text: '✅ *Laporan terkirim ke admin.*\n\nSilakan lanjut chat di sini — pesanmu akan diteruskan ke admin.\nKetik *selesai* untuk mengakhiri sesi.' }, { quoted: message });
+  } else {
+    setKiwSession(messageInfo, { mode: 'chat_admin', from: sess.from, username: sess.username });
+    await sock.sendMessage(remoteJid, { text: '_✅ Pesan diteruskan ke admin._' }, { quoted: message });
+  }
+  return true;
+}
+
 function bukaSesiChatAdmin(messageInfo, extra = {}) {
   setKiwSession(messageInfo, { mode: 'chat_admin', ...extra });
 }
@@ -318,6 +354,7 @@ export async function processKiwSession(sock, messageInfo) {
 
   // ----- CHAT 2 ARAH: user → admin -----
   if (sess.mode === 'chat_admin') {
+    if (await teruskanMediaLain(sock, messageInfo, sess, 'chat')) return true;
     if (['selesai', 'close', 'stop', 'end'].includes(bodyLower)) {
       const nama = pushName || 'Tanpa Nama';
       const nomor = await resolveNomorWa(sock, messageInfo);
@@ -459,6 +496,7 @@ export async function processKiwSession(sock, messageInfo) {
 
   // ----- TUNGGU LAPORAN -----
   if (sess.mode === 'wait_lapor') {
+    if (await teruskanMediaLain(sock, messageInfo, sess, 'lapor')) return true;
     const mediaType = isQuoted ? isQuoted.type : type;
     let mediaPath = null;
     let mType = null;
