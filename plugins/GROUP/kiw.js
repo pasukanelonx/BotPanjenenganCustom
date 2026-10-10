@@ -11,7 +11,7 @@ import {
   saveReportRef,
   clearReportRefsByUser,
 } from '../../lib/kiwSession.js';
-import { mg, whoIs, findMember } from '../../lib/memberGuard.js';
+import { mg, whoIs, findMember, registerFromText } from '../../lib/memberGuard.js';
 
 const JOIN_CHAT_TTL = 10 * 60 * 1000;
 
@@ -506,6 +506,19 @@ export async function processKiwSession(sock, messageInfo) {
 
   // ----- TUNGGU USERNAME -----
   if (sess.mode === 'wait_join_username') {
+    // perintah lain di tengah sesi join
+    const raw = getRawText(message) || (messageInfo.content || '').trim();
+    const cmd = raw.match(/^[.!#]\s*(\w+)\s*([\s\S]*)$/);
+    if (cmd && cmd[1].toLowerCase() !== 'kiw') {
+      if (cmd[1].toLowerCase() === 'daftar' && cmd[2].trim()) {
+        const res = await registerFromText(sock, messageInfo, cmd[2].trim()).catch((e) => 'Gagal mendaftar: ' + e.message);
+        await sock.sendMessage(remoteJid, { text: res }, { quoted: message });
+        await mulaiJoin(sock, messageInfo);
+        return true;
+      }
+      setKiwSession(messageInfo, { mode: 'wait_join_username', accs: sess.accs || [] });
+      return false;
+    }
     if (['selesai', 'batal', 'stop', 'close', 'end'].includes(bodyLower)) {
       clearKiwSession(messageInfo);
       await sock.sendMessage(remoteJid, { text: '_Permintaan join dibatalkan._' }, { quoted: message });
@@ -544,6 +557,7 @@ export async function processKiwSession(sock, messageInfo) {
 
   // ----- TUNGGU PILIHAN GRUP -----
   if (sess.mode === 'wait_join_grup') {
+    if (/^[.!#]\s*(?!kiw\b)\w+/i.test(getRawText(message) || (messageInfo.content || '').trim())) return false;
     const list = config.grup_join || [];
     const username = sess.username;
 
