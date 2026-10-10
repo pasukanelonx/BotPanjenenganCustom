@@ -184,6 +184,49 @@ async function cekSyaratJoin(sock, messageInfo, input) {
   }
 }
 
+/** Akun X yang terdaftar atas nomor pemohon (dari member-guard). Gagal -> []. */
+async function akunMilik(sock, messageInfo) {
+  try {
+    const { core } = await mg();
+    const who = await whoIs(sock, messageInfo);
+    const o = await core.findOwner(who);
+    if (!o) return [];
+    return (await core.ownerAccounts(o.id)).map((a) => a.username).filter(Boolean);
+  } catch (e) {
+    console.warn('[kiw join] daftar akun:', e.message);
+    return [];
+  }
+}
+
+/** Buka mode join: tampilkan akun terdaftar bernomor supaya cukup balas angka. */
+async function mulaiJoin(sock, messageInfo) {
+  const p = (config.prefix && config.prefix[0]) || '.';
+  const accs = await akunMilik(sock, messageInfo);
+  setKiwSession(messageInfo, { mode: 'wait_join_username', accs });
+  let t = `👥 *Join Akun ke Grup*\n\n`;
+  if (accs.length) {
+    t += `Akun terdaftarmu:\n` + accs.map((u, i) => `${i + 1}. @${u}`).join('\n') + `\n\n`;
+    t += `Balas *nomor* akunnya, contoh:\n• *1*\n• *1 3*  (beberapa sekaligus)\n• *semua*\n\n`;
+    t += `Akun lain? Ketik username-nya langsung (harus sudah didaftarkan: *${p}daftar username*).\n`;
+  } else {
+    t += `Kamu belum punya akun terdaftar.\nDaftarkan dulu: *${p}daftar username*, lalu ulangi *${p}kiw join*.\n\n`;
+    t += `Atau ketik *username* akunnya kalau sudah terdaftar.\n`;
+  }
+  t += `_Ketik langsung tanpa .kiw · *batal* untuk berhenti · Session 10 menit_`;
+  await sock.sendMessage(messageInfo.remoteJid, { text: t }, { quoted: messageInfo.message });
+}
+
+/** Ubah balasan (nomor / "semua" / username) jadi daftar username. */
+function pilihanKeUsername(body, accs = []) {
+  const b = body.trim().toLowerCase();
+  if (accs.length && ['semua', 'all', 'semuanya'].includes(b)) return accs.join(' ');
+  return body
+    .split(/[\s,;]+/)
+    .filter(Boolean)
+    .map((tok) => (/^\d+$/.test(tok) && accs[Number(tok) - 1] ? accs[Number(tok) - 1] : tok))
+    .join(' ');
+}
+
 function joinListText(username) {
   const list = config.grup_join || [];
   let t =
@@ -468,10 +511,17 @@ export async function processKiwSession(sock, messageInfo) {
       await sock.sendMessage(remoteJid, { text: '_Permintaan join dibatalkan._' }, { quoted: message });
       return true;
     }
+    // nomor / "semua" -> username dari daftar akun terdaftar
+    const input = pilihanKeUsername(body, sess.accs || []);
+    if (/^\d+$/.test(body.trim()) && input === body.trim()) {
+      setKiwSession(messageInfo, { mode: 'wait_join_username', accs: sess.accs || [] });
+      await sock.sendMessage(remoteJid, { text: `_Nomor ${body.trim()} tidak ada di daftar. Pilih 1–${(sess.accs || []).length}, atau ketik username._` }, { quoted: message });
+      return true;
+    }
     // cek syarat dulu: anggota grup WA, akun terdaftar atas nomor ini, tidak di-blacklist
-    const cek = await cekSyaratJoin(sock, messageInfo, body);
+    const cek = await cekSyaratJoin(sock, messageInfo, input);
     if (!cek.ok) {
-      if (cek.keep) setKiwSession(messageInfo, { mode: 'wait_join_username' });
+      if (cek.keep) setKiwSession(messageInfo, { mode: 'wait_join_username', accs: sess.accs || [] });
       else clearKiwSession(messageInfo);
       await sock.sendMessage(remoteJid, { text: cek.text }, { quoted: message });
       return true;
@@ -610,19 +660,7 @@ export async function processKiwSession(sock, messageInfo) {
     }
 
     if (bodyLower === '2' || bodyLower === 'join') {
-      setKiwSession(messageInfo, { mode: 'wait_join_username' });
-      await sock.sendMessage(
-        remoteJid,
-        {
-          text:
-            `👥 *Join Akun ke Grup*\n\n` +
-            `Ketik *username* akun yang ingin di-join.\n` +
-            `_Langsung ketik username, tanpa .kiw_\n\n` +
-            `Contoh:\n• username123\n\n` +
-            `_Session 10 menit_`,
-        },
-        { quoted: message }
-      );
+      await mulaiJoin(sock, messageInfo);
       return true;
     }
   }
@@ -689,19 +727,7 @@ async function handle(sock, messageInfo) {
     }
 
     if (bodyLower === 'join' || bodyLower === '2') {
-      setKiwSession(messageInfo, { mode: 'wait_join_username' });
-      return sock.sendMessage(
-        remoteJid,
-        {
-          text:
-            `👥 *Join Akun ke Grup*\n\n` +
-            `Ketik *username* akun yang ingin di-join.\n` +
-            `_Langsung ketik username, tanpa .kiw_\n\n` +
-            `Contoh:\n• username123\n\n` +
-            `_Session 10 menit_`,
-        },
-        { quoted: message }
-      );
+      return mulaiJoin(sock, messageInfo);
     }
 
     if (command === 'kiw' && body) {
