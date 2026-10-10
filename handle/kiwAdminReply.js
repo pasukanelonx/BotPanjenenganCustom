@@ -20,17 +20,23 @@ function getRawText(message) {
 }
 
 function getQuotedId(message) {
-  const m = message?.message || {};
-  const ctx =
-    m.extendedTextMessage?.contextInfo ||
-    m.imageMessage?.contextInfo ||
-    m.videoMessage?.contextInfo ||
-    m.documentMessage?.contextInfo ||
-    m.audioMessage?.contextInfo ||
-    m.conversation?.contextInfo ||
-    null;
+  let m = message?.message || {};
+  for (const w of ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']) {
+    if (m[w]?.message) m = m[w].message;
+  }
+  for (const k of Object.keys(m)) {
+    const id = m[k]?.contextInfo?.stanzaId;
+    if (id) return id;
+  }
+  return null;
+}
 
-  return ctx?.stanzaId || null;
+function mediaOf(message, key) {
+  let m = message?.message || {};
+  for (const w of ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']) {
+    if (m[w]?.message) m = m[w].message;
+  }
+  return m[key] || {};
 }
 
 export default {
@@ -70,7 +76,26 @@ export default {
         `👤 Dari: Admin\n` +
         `━━━━━━━━━━━━━━━━\n`;
 
-      if (type === 'image' || type === 'video') {
+      if (['sticker', 'audio', 'document'].includes(type)) {
+        try {
+          const media = await downloadMedia(message);
+          const buffer = fs.readFileSync(path.join('tmp', media));
+          if (type === 'sticker') {
+            await sock.sendMessage(ref.userJid, { sticker: buffer });
+          } else if (type === 'audio') {
+            const a = mediaOf(message, 'audioMessage');
+            await sock.sendMessage(ref.userJid, { text: header.trim() });
+            await sock.sendMessage(ref.userJid, { audio: buffer, mimetype: a.mimetype || 'audio/ogg; codecs=opus', ptt: !!a.ptt });
+          } else {
+            const d = mediaOf(message, 'documentMessage');
+            await sock.sendMessage(ref.userJid, { document: buffer, mimetype: d.mimetype || 'application/octet-stream', fileName: d.fileName || 'file', caption: header + (body || '') });
+          }
+        } catch (e) {
+          console.error('kiwAdminReply media:', e.message);
+          await sock.sendMessage(remoteJid, { text: 'Gagal meneruskan ' + type + ': ' + e.message }, { quoted: message });
+          return false;
+        }
+      } else if (type === 'image' || type === 'video') {
         try {
           const media = await downloadMedia(message);
           const mediaPath = path.join('tmp', media);
