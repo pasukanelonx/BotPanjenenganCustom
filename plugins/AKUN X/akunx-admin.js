@@ -22,6 +22,7 @@ const HELP = (p) => [
   `${p}mgnomor 08xx / @tag — akun X milik nomor itu`,
   `${p}mgtambah @member akun1 akun2 — daftarkan atas nama member`,
   `${p}mglepas akun — lepas akun dari pemiliknya`,
+  `${p}mgtag — reply pesan rekap: tag pemilik akun yang belum ✅`,
   `${p}mgidgrup — JID grup ini`,
   '',
   '*Grup XChat*',
@@ -241,6 +242,41 @@ async function handle(sock, messageInfo) {
         const tip = `\nDaftarkan atas nama pemilik: *${prefix}mgtambah @member akun*\nKeluarkan semua yang di atas: *${prefix}mgxkick liar${isKey ? ' ' + a0 : sc ? '' : ' semua'}*\nSatu-satu: *${prefix}mgxkick ${kk} akun*`;
         for (let i = 0; i < lines.length; i += 80) await send((i ? '' : head + '\n') + lines.slice(i, i + 80).join('\n') + (i + 80 >= lines.length ? '\n' + tip : ''));
         return;
+      }
+
+      case 'mgtag': {
+        const mm = message?.message || {};
+        const ctx = Object.values(mm).find((v) => v && v.contextInfo && v.contextInfo.quotedMessage)?.contextInfo;
+        const q = ctx?.quotedMessage || {};
+        const quoted = q.conversation || q.extendedTextMessage?.text || q.imageMessage?.caption || '';
+        const raw = (content || '').trim() ? content : quoted;
+        if (!raw.trim()) return send(`Balas (reply) pesan rekap dengan *${prefix}mgtag*, atau tempel daftarnya setelah *${prefix}mgtag*.`);
+        const perlu = [];
+        for (const line of raw.split('\n')) {
+          const clean = line.replace(/[*_~`]/g, '').trim();
+          if (!clean || /[✅☑✔]/u.test(clean)) continue;
+          const words = clean.replace(/[❌✖✗❎⛔🚫]/gu, ' ').replace(/\uFE0F/g, '').trim().split(/\s+/).filter(Boolean);
+          if (!words.length) continue;
+          const u = util.normUser(words[0]);
+          if (!u || words.length > 1) continue;
+          if (!perlu.includes(u)) perlu.push(u);
+        }
+        if (!perlu.length) return send('✅ Tidak ada username yang perlu di-tag (semua sudah ✅ atau ada keterangan).');
+        const byOwner = new Map();
+        const tidakTerdaftar = [];
+        for (const u of perlu) {
+          const info = await core.accountInfo(u).catch(() => null);
+          const o = info?.owner;
+          const jid = o && (o.wa_pn || o.wa_lid);
+          if (!jid) { tidakTerdaftar.push(u); continue; }
+          if (!byOwner.has(jid)) byOwner.set(jid, []);
+          byOwner.get(jid).push(u);
+        }
+        const lines = [...byOwner.entries()].map(([jid, us], i) => `${i + 1}. @${jid.split('@')[0]} → ${us.join(', ')}`);
+        let text = `📢 *Belum reply / konfirmasi* (${perlu.length} akun)\n\n` + (lines.join('\n') || '-');
+        if (tidakTerdaftar.length) text += `\n\n⚠️ Belum terdaftar di bot (pemilik tidak diketahui):\n${tidakTerdaftar.join(', ')}`;
+        text += `\n\n_Mohon segera reply & konfirmasi ya 🙏_`;
+        return send(text, [...byOwner.keys()]);
       }
 
       case 'mgket': {
@@ -544,7 +580,7 @@ async function handle(sock, messageInfo) {
 
 export default {
   handle,
-  Commands: ['mg', 'mgmenu', 'mgidgrup', 'mgstatus', 'mgcek', 'mglaporan', 'mgbatal', 'mgkick', 'mgbelum', 'mgkickbelum', 'mgpemilik', 'mgnomor', 'mgtambah', 'mglepas', 'mgbl', 'mgblx', 'mgblwa', 'mgunbl', 'mgxkick', 'mgrekap', 'mgliar', 'mgcentang', 'mgsuspend', 'mgabsen', 'mgket', 'mgkickkomunitas'],
+  Commands: ['mg', 'mgmenu', 'mgidgrup', 'mgstatus', 'mgcek', 'mglaporan', 'mgbatal', 'mgkick', 'mgbelum', 'mgkickbelum', 'mgpemilik', 'mgnomor', 'mgtambah', 'mglepas', 'mgbl', 'mgblx', 'mgblwa', 'mgunbl', 'mgxkick', 'mgrekap', 'mgliar', 'mgcentang', 'mgsuspend', 'mgabsen', 'mgket', 'mgkickkomunitas', 'mgtag'],
   OnlyPremium: false,
   OnlyOwner: false,
   limitDeduction: 0,
