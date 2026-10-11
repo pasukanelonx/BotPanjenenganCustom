@@ -23,6 +23,7 @@ const HELP = (p) => [
   `${p}mgtambah @member akun1 akun2 — daftarkan atas nama member`,
   `${p}mglepas akun — lepas akun dari pemiliknya`,
   `${p}mgtag — reply pesan rekap: tag pemilik akun yang belum ✅`,
+  `${p}mgsanksi — reply rekap setelah jam batas: sanksi strike (${p}mgstrike = daftar strike)`,
   `${p}mgidgrup — JID grup ini`,
   '',
   '*Grup XChat*',
@@ -278,10 +279,13 @@ async function handle(sock, messageInfo) {
           if (!byOwner.has(jid)) byOwner.set(jid, []);
           byOwner.get(jid).push(u);
         }
-        const lines = [...byOwner.entries()].map(([jid, us], i) => `${i + 1}. @${jid.split('@')[0]} → ${us.join(', ')}`);
+        const sk = await core.sanksiStatus([...byOwner.values()].flat()).catch(() => ({}));
+        const lbl = (u) => (sk[u]?.strike ? `${u} ⚠️${sk[u].strike}/${sk[u].max}` : u);
+        const lines = [...byOwner.entries()].map(([jid, us], i) => `${i + 1}. @${jid.split('@')[0]} → ${us.map(lbl).join(', ')}`);
         let text = `📢 *Belum reply / konfirmasi* (${perlu.length} akun)\n\n` + (lines.join('\n') || '-');
         if (tidakTerdaftar.length) text += `\n\n⚠️ Belum terdaftar di bot (pemilik tidak diketahui):\n${tidakTerdaftar.join(', ')}`;
-        text += `\n\n_Mohon segera reply & konfirmasi ya 🙏_`;
+        const at = await core.sanksiAturan().catch(() => null);
+        text += `\n\n⏰ *Batas konfirmasi jam ${process.env.SANKSI_JAM || 11}.00 WIB.*` + (at ? `\nLewat dari itu kena strike: ${at.teks}.` : '') + `\n_Mohon segera reply & konfirmasi ya 🙏_`;
         return send(text, [...byOwner.keys()]);
       }
 

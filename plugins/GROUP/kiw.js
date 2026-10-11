@@ -147,6 +147,8 @@ async function cekSyaratJoin(sock, messageInfo, input) {
     const lolos = [];
     const ditolak = [];
     for (const username of names) {
+      const sk = await core.sanksiAktif(username).catch(() => null);
+      if (sk) { ditolak.push(`@${username} — kena sanksi (strike ${sk.strike}) sampai ${sk.untilText}`); continue; }
       if (await core.isXBlacklisted(username)) { ditolak.push(`@${username} — tidak diizinkan`); continue; }
       const info = await core.accountInfo(username);
       if (!info?.account) { ditolak.push(`@${username} — belum terdaftar`); continue; }
