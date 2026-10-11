@@ -253,22 +253,28 @@ async function handle(sock, messageInfo) {
         if (!raw.trim()) return send(`Balas (reply) pesan rekap dengan *${prefix}mgtag*, atau tempel daftarnya setelah *${prefix}mgtag*.`);
         const perlu = [];
         for (const line of raw.split('\n')) {
-          const clean = line.replace(/[*_~`]/g, '').trim();
-          if (!clean || /[✅☑✔]/u.test(clean)) continue;
-          const words = clean.replace(/[❌✖✗❎⛔🚫]/gu, ' ').replace(/\uFE0F/g, '').trim().split(/\s+/).filter(Boolean);
-          if (!words.length) continue;
-          const u = util.normUser(words[0]);
-          if (!u || words.length > 1) continue;
-          if (!perlu.includes(u)) perlu.push(u);
+          const t = line.trim();
+          if (!t || /[✅☑✔]/u.test(t)) continue;
+          if (/^\*[^*]+\*$/.test(t)) continue; // judul tebal
+          const words = t.replace(/[*~`]/g, '').replace(/[❌✖✗❎⛔🚫]/gu, ' ').replace(/\uFE0F/g, '').trim().split(/\s+/).filter(Boolean);
+          if (words.length !== 1) continue;
+          const u = util.normUser(words[0]) || util.normUser(words[0].replace(/^_+|_+$/g, ''));
+          if (u && !perlu.includes(u)) perlu.push(u);
         }
         if (!perlu.length) return send('✅ Tidak ada username yang perlu di-tag (semua sudah ✅ atau ada keterangan).');
         const byOwner = new Map();
         const tidakTerdaftar = [];
-        for (const u of perlu) {
-          const info = await core.accountInfo(u).catch(() => null);
+        for (const u0 of perlu) {
+          let u = u0;
+          let info = await core.accountInfo(u).catch(() => null);
+          const alt = u0.replace(/^_+|_+$/g, '');
+          if (!info?.owner && alt && alt !== u0) {
+            const i2 = await core.accountInfo(alt).catch(() => null);
+            if (i2?.owner) { info = i2; u = alt; }
+          }
           const o = info?.owner;
           const jid = o && (o.wa_pn || o.wa_lid);
-          if (!jid) { tidakTerdaftar.push(u); continue; }
+          if (!jid) { tidakTerdaftar.push(u0); continue; }
           if (!byOwner.has(jid)) byOwner.set(jid, []);
           byOwner.get(jid).push(u);
         }
