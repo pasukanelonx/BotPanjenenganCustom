@@ -25,10 +25,10 @@ function parseRekap(raw, util) {
 }
 
 async function handle(sock, messageInfo) {
-  const { remoteJid, message, content, command, prefix } = messageInfo;
+  const { remoteJid, message, content, command, prefix, isGroup } = messageInfo;
   const send = (text, mentions = []) => sock.sendMessage(remoteJid, { text, mentions }, { quoted: message });
   try {
-    const { core, util } = await mg();
+    const { core, util, cfg } = await mg();
     const who = await whoIs(sock, messageInfo);
     if (!(await isMgAdmin(sock, messageInfo, who))) return send('_⛔ Perintah ini khusus admin._');
     const by = who.pn || who.lid || messageInfo.sender;
@@ -44,7 +44,7 @@ async function handle(sock, messageInfo) {
       }
       const [rows, at] = await Promise.all([core.sanksiList(), core.sanksiAturan()]);
       if (!rows.length) return send(`👍 Belum ada akun yang punya strike.\n\nAturan: ${at.teks}.`);
-      const lines = rows.map((r, i) => `${i + 1}. @${r.username} — strike ${r.strike}${r.aktif ? ` · ⛔ disanksi sampai ${r.untilText}` : ''}`);
+      const lines = rows.map((r, i) => `${i + 1}. @${r.username} — strike ${r.strike}${r.aktif ? ` · ⛔ ${r.groupsText || 'semua grup'} sampai ${r.untilText}` : ''}`);
       return send([`*Daftar strike (${rows.length})*`, '', ...lines, '', `Aturan: ${at.teks}.`, `Strike hangus kalau ${at.resetHari} hari tanpa strike baru.`, `Hapus: *${prefix}mgstrike hapus akun*`].join('\n'));
     }
 
@@ -61,14 +61,16 @@ async function handle(sock, messageInfo) {
         const tag = tagOf(x);
         if (x.pn || x.lid) mentions.push(x.pn || x.lid);
         return `${i + 1}. ${tag ? tag + ' → ' : ''}@${x.username} — strike ${x.strike}: ` +
-          (x.permanen ? '*BLACKLIST PERMANEN*' : `keluar grup ${x.hari} hari, sampai ${x.untilText}`);
+          (x.permanen ? '*BLACKLIST PERMANEN*' : `keluar ${x.scope || 'grup'} ${x.hari} hari, sampai ${x.untilText}`);
       });
       const kick = !r.kick ? '' : r.kick.queued
         ? `\n\n🦶 Kick grup XChat masuk antrean (laporan #${r.kick.id}). Hasilnya dikirim ke grup admin.`
         : `\n\n⚠️ Masih ada kick XChat lain di antrean. Setelah selesai jalankan: *${prefix}mgxkick ${r.kick.id}*`;
       return send([
         `⚖️ *Sanksi: tidak konfirmasi sampai jam ${JAM_BATAS}.00*`, '', ...lines, '',
-        `_Selama masa sanksi akun tidak bisa minta link grup. Setelah selesai, minta lagi lewat ${prefix}kiw → join._`,
+        r.scope
+          ? `_Selama masa sanksi jangan join lagi ke ${r.scope} — kalau masuk lagi akan dikeluarkan. Setelah selesai, minta link lewat ${prefix}kiw → join._`
+          : `_Selama masa sanksi akun tidak bisa minta link grup. Setelah selesai, minta lagi lewat ${prefix}kiw → join._`,
       ].join('\n') + kick, mentions);
     }
 
@@ -77,21 +79,47 @@ async function handle(sock, messageInfo) {
     const ctx = Object.values(mm).find((v) => v && v.contextInfo && v.contextInfo.quotedMessage)?.contextInfo;
     const q = ctx?.quotedMessage || {};
     const quoted = q.conversation || q.extendedTextMessage?.text || q.imageMessage?.caption || '';
-    const paksa = a0 === 'paksa';
-    const raw = (paksa ? args.slice(1).join('\n') : (content || '').trim()) || quoted;
+    // kata kunci di belakang perintah: paksa, nama grup XChat (mis. paslon1rl), semua
+    const keys = cfg.xGroupKeys || [];
+    let paksa = false;
+    let scope; // undefined = belum ditentukan, null = semua grup
+    const sisa = [];
+    for (const line of String(content || '').split('\n')) {
+      const kept = [];
+      for (const w of line.trim().split(/\s+/).filter(Boolean)) {
+        const wl = w.toLowerCase();
+        if (wl === 'paksa') paksa = true;
+        else if (wl === 'semua' || wl === 'all') scope = null;
+        else if (keys.includes(wl)) scope = wl;
+        else kept.push(w);
+      }
+      if (kept.length) sisa.push(kept.join(' '));
+    }
+    const raw = sisa.join('\n').trim() || quoted;
     if (!raw.trim()) {
       const at = await core.sanksiAturan();
       return send([
         '*Sanksi tidak konfirmasi*',
         `Batas konfirmasi jam ${JAM_BATAS}.00 WIB. Aturan: ${at.teks}.`,
         '',
-        `1. Reply pesan rekap terbaru dengan *${prefix}mgsanksi* → bot menyiapkan daftar (belum dijalankan)`,
+        `1. Reply pesan rekap terbaru dengan *${prefix}mgsanksi NAMAGRUP* → bot menyiapkan daftar (belum dijalankan)`,
+        `   Grup XChat: ${keys.join(', ') || '-'} (atau *semua*)`,
         `2. Cek daftarnya, lalu *${prefix}mgsanksi ok ID* (kecualikan: *${prefix}mgsanksi ok ID -2 -5*)`,
         `3. *${prefix}mgstrike* — daftar strike · *${prefix}mgstrike hapus akun* — cabut`,
       ].join('\n'));
     }
     if (!paksa && jamWib() < JAM_BATAS) {
-      return send(`⏰ Belum jam ${JAM_BATAS}.00 WIB, member masih boleh konfirmasi.\nKalau memang mau sekarang: *${prefix}mgsanksi paksa* (sambil reply rekap).`);
+      return send(`⏰ Belum jam ${JAM_BATAS}.00 WIB, member masih boleh konfirmasi.\nKalau memang mau sekarang: *${prefix}mgsanksi paksa${scope ? ' ' + scope : ''}* (sambil reply rekap).`);
+    }
+    // grup tempat kick: dari perintah; kalau tidak disebut dan grup WA ini hanya punya 1 grup XChat, pakai itu
+    if (scope === undefined) {
+      const fam = isGroup ? (cfg.waGroups || []).find((g) => g.jid === remoteJid) : null;
+      const fk = fam?.keys || [];
+      if (fk.length === 1) scope = fk[0];
+      else {
+        const pilih = fk.length ? fk : keys;
+        return send(`Sebutkan grup XChat tempat sanksi berlaku (sambil reply rekap):\n${pilih.map((k) => `• *${prefix}mgsanksi ${k}*`).join('\n')}\n• *${prefix}mgsanksi semua* — semua grup tempat akun itu ada`);
+      }
     }
     const perlu = parseRekap(raw, util);
     if (!perlu.length) return send('✅ Tidak ada username yang belum ✅ di pesan itu.');
@@ -109,14 +137,16 @@ async function handle(sock, messageInfo) {
       }
       if (!names.includes(u)) names.push(u);
     }
-    const { report, lewati, aturan } = await core.sanksiPreview(names, by);
+    const { report, lewati, aturan, error } = await core.sanksiPreview(names, by, scope);
+    if (error) return send(`❌ ${error}`);
     const skipLines = lewati.length ? ['', 'Dilewati:', ...lewati.map((x) => `• @${x.username} — ${x.why}`)] : [];
     if (!report) return send(['Tidak ada akun yang perlu disanksi.', ...skipLines].join('\n'));
     const mentions = report.items.map((it) => it.pn || it.lid).filter(Boolean);
     const rows = report.items.map((it, i) =>
       `${i + 1}. @${it.username}${tagOf(it) ? ` (${tagOf(it)})` : ' (belum terdaftar)'} — strike ${it.strike} → ${it.permanen ? '*BLACKLIST PERMANEN*' : `keluar grup ${it.hari} hari`}`);
     return send([
-      `⚖️ *Laporan #${report.id}: belum konfirmasi sampai jam ${JAM_BATAS}.00 (${report.items.length})*`, '', ...rows, ...skipLines, '',
+      `⚖️ *Laporan #${report.id}: belum konfirmasi sampai jam ${JAM_BATAS}.00 (${report.items.length})*`,
+      `Grup: *${scope || 'semua grup'}*`, '', ...rows, ...skipLines, '',
       `Aturan: ${aturan}.`,
       `Jalankan: *${prefix}mgsanksi ok ${report.id}*`,
       `Kecualikan nomor urut (mis. yang izin): *${prefix}mgsanksi ok ${report.id} -2 -5*`,
