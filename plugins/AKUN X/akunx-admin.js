@@ -23,6 +23,7 @@ const HELP = (p) => [
   `${p}mgtambah @member akun1 akun2 — daftarkan atas nama member`,
   `${p}mglepas akun — lepas akun dari pemiliknya`,
   `${p}mgtag — reply pesan rekap: tag pemilik akun yang belum ✅`,
+  `${p}mglink — lihat / ganti link undangan grup XChat untuk .kiw join`,
   `${p}mgsanksi — reply rekap setelah jam batas: sanksi strike (${p}mgstrike = daftar strike)`,
   `${p}mgidgrup — JID grup ini`,
   '',

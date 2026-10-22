@@ -12,6 +12,7 @@ import {
   clearReportRefsByUser,
 } from '../../lib/kiwSession.js';
 import { mg, whoIs, findMember, registerFromText } from '../../lib/memberGuard.js';
+import { getGrupJoin } from '../../lib/grupJoin.js';
 
 const JOIN_CHAT_TTL = 10 * 60 * 1000;
 
@@ -230,7 +231,7 @@ function pilihanKeUsername(body, accs = []) {
 }
 
 function joinListText(username) {
-  const list = config.grup_join || [];
+  const list = getGrupJoin();
   let t =
     `*Pilih Grup untuk akun: ${username}*\n` +
     `Bisa pilih lebih dari satu.\n\n`;
@@ -598,7 +599,7 @@ export async function processKiwSession(sock, messageInfo) {
   // ----- TUNGGU PILIHAN GRUP -----
   if (sess.mode === 'wait_join_grup') {
     if (/^[.!#]\s*(?!kiw\b)\w+/i.test(getRawText(message) || (messageInfo.content || '').trim())) return false;
-    const list = config.grup_join || [];
+    const list = getGrupJoin();
     const username = sess.username;
 
     let selected = [];

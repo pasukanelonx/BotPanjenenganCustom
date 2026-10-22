@@ -16,3 +16,5 @@ database/bot.db
 database/bot.db-wal
 database/bot.db-shm
 database/_json_backup/
+database/grup_join.json
+database/grup_join.json.tmp
