@@ -201,6 +201,13 @@ async function akunMilik(sock, messageInfo) {
   }
 }
 
+const DAFTAR_PROMPT =
+  '*Pendataan Akun X*\n\n' +
+  'Kirim *semua username akun X milikmu* sekarang, pisahkan dengan spasi atau baris baru.\n' +
+  'Boleh pakai @ atau link profil x.com.\n\n' +
+  'Contoh:\nakunsatu\nakundua\n\n' +
+  '_Setelah terdaftar, permintaan join langsung dilanjutkan. Ketik *batal* untuk membatalkan._';
+
 /** Buka mode join: tampilkan akun terdaftar bernomor supaya cukup balas angka. */
 async function mulaiJoin(sock, messageInfo) {
   const p = (config.prefix && config.prefix[0]) || '.';
@@ -545,6 +552,25 @@ export async function processKiwSession(sock, messageInfo) {
     return true;
   }
 
+  // ----- DAFTAR DI TENGAH SESI JOIN -----
+  if (sess.mode === 'wait_join_daftar') {
+    const raw = getRawText(message) || (messageInfo.content || '').trim();
+    if (/^[.!#]\s*\w+/.test(raw)) {
+      // perintah lain: kembali ke mode join dan biarkan plugin menangani perintahnya
+      setKiwSession(messageInfo, { mode: 'wait_join_username', accs: sess.accs || [] });
+      return false;
+    }
+    if (['selesai', 'batal', 'stop', 'close', 'end'].includes(bodyLower)) {
+      clearKiwSession(messageInfo);
+      await sock.sendMessage(remoteJid, { text: '_Pendaftaran dan permintaan join dibatalkan._' }, { quoted: message });
+      return true;
+    }
+    const res = await registerFromText(sock, messageInfo, body).catch((e) => 'Gagal mendaftar: ' + e.message);
+    await sock.sendMessage(remoteJid, { text: res }, { quoted: message });
+    await mulaiJoin(sock, messageInfo);
+    return true;
+  }
+
   // ----- TUNGGU USERNAME -----
   if (sess.mode === 'wait_join_username') {
     // perintah lain di tengah sesi join
@@ -555,6 +581,12 @@ export async function processKiwSession(sock, messageInfo) {
         const res = await registerFromText(sock, messageInfo, cmd[2].trim()).catch((e) => 'Gagal mendaftar: ' + e.message);
         await sock.sendMessage(remoteJid, { text: res }, { quoted: message });
         await mulaiJoin(sock, messageInfo);
+        return true;
+      }
+      if (cmd[1].toLowerCase() === 'daftar') {
+        // .daftar tanpa username di tengah sesi join: pesan berikutnya dipakai untuk mendaftar, lalu join dilanjutkan
+        setKiwSession(messageInfo, { mode: 'wait_join_daftar', accs: sess.accs || [] });
+        await sock.sendMessage(remoteJid, { text: DAFTAR_PROMPT }, { quoted: message });
         return true;
       }
       setKiwSession(messageInfo, { mode: 'wait_join_username', accs: sess.accs || [] });
