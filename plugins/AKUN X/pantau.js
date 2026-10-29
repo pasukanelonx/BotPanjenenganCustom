@@ -1,6 +1,6 @@
 // Pantau akun konten (akun untuk upload postingan) oleh SinyalTren. Semua lewat CHAT PRIBADI (privasi):
 // .pantau                → lihat akun konten yang kamu pantau + cara pakai
-// .pantau user1 user2 …  → tambah (maks. PANTAU_MAX_PER_MEMBER akun per member, bawaan 5)
+// .pantau user1 user2 …  → tambah (maks. PANTAU_MAX_PER_MEMBER akun per member, bawaan 30)
 // .unpantau 2 / username → berhenti memantau
 // .pantau semua          → (admin) jumlah & daftar akun yang dipantau
 // Syarat: anggota grup member / komunitas. Notifikasi perubahan status dikirim lewat chat pribadi.
@@ -79,7 +79,11 @@ async function handle(sock, messageInfo) {
 
     // Cek ke X: username salah ketik / tidak ada / suspend / dikunci langsung ketahuan
     const fresh = ok.filter((u) => !data.accounts[u]);
-    const cek = await checkX(fresh.slice(0, 10));
+    let cek = null;
+    for (let i = 0; i < fresh.length; i += 10) { // SinyalTren menerima maks. 10 username per permintaan
+      const part = await checkX(fresh.slice(i, i + 10));
+      if (part) cek = { ...(cek || {}), ...part };
+    }
     const rejected = [];
     const accept = [];
     for (const u of ok) {
