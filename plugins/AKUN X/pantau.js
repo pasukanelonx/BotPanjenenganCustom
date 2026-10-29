@@ -1,11 +1,12 @@
 // Pantau akun konten (akun untuk upload postingan) oleh SinyalTren. Semua lewat CHAT PRIBADI (privasi):
-// .pantau                → lihat akun konten yang kamu pantau + cara pakai
+// .pantau                → lihat akun konten yang kamu pantau, lalu bot menunggu username (sesi 10 menit)
 // .pantau user1 user2 …  → tambah (maks. PANTAU_MAX_PER_MEMBER akun per member, bawaan 30)
 // .unpantau 2 / username → berhenti memantau
 // .pantau semua          → (admin) jumlah & daftar akun yang dipantau
 // Syarat: anggota grup member / komunitas. Notifikasi perubahan status dikirim lewat chat pribadi.
 // Username dicek ke X lewat SinyalTren (SINYALTREN_URL + SINYALTREN_TOKEN = ADMIN_TOKEN SinyalTren) bila diatur.
-import { whoIs, findMember, findCommunityMember, isMgAdmin } from '../../lib/memberGuard.js';
+import { whoIs, findMember, findCommunityMember, isMgAdmin, closeSession } from '../../lib/memberGuard.js';
+import { clearKiwSession } from '../../lib/kiwSession.js';
 import * as store from '../../lib/pantauStore.js';
 
 const ST_URL = (process.env.SINYALTREN_URL || 'https://sinyaltren.tech').replace(/\/$/, '');
@@ -27,6 +28,45 @@ async function checkX(usernames) {
     console.warn('[pantau] cek X gagal:', e.message);
     return null;
   }
+}
+
+/** Daftarkan username dari teks (dipakai .pantau user1 user2 dan sesi setelah .pantau). Mengembalikan teks balasan. */
+export async function registerPantau(messageInfo, who, args, p = '.') {
+    const data = store.load();
+    const { ok, bad } = store.parseUsernames(args);
+    if (!ok.length) return (`Tulis username akun X-nya, boleh beberapa sekaligus.\nContoh: *${p}pantau akunkonten1 akunkonten2*` + (bad.length ? `\n\n⚠️ Bukan username valid: ${bad.join(', ')}` : ''));
+
+    // Cek ke X: username salah ketik / tidak ada / suspend / dikunci langsung ketahuan
+    const fresh = ok.filter((u) => !data.accounts[u]);
+    let cek = null;
+    for (let i = 0; i < fresh.length; i += 10) { // SinyalTren menerima maks. 10 username per permintaan
+      const part = await checkX(fresh.slice(i, i + 10));
+      if (part) cek = { ...(cek || {}), ...part };
+    }
+    const rejected = [];
+    const accept = [];
+    for (const u of ok) {
+      const c = cek?.[u];
+      if (!c || c.status === 'ok' || c.status === 'error') { accept.push(u); continue; }
+      if (c.status === 'not_found') rejected.push(`@${u} — tidak ditemukan di X (salah ketik? ganti nama?)`);
+      else if (c.status === 'suspended') rejected.push(`@${u} — akun ini sedang di-suspend X`);
+      else if (c.status === 'protected') rejected.push(`@${u} — akun digembok (protected), shadowban tidak bisa dicek`);
+      else rejected.push(`@${u} — akun tidak tersedia di X${c.reason ? ` (${c.reason})` : ''}`);
+    }
+    const r = store.add(who, messageInfo.pushName, accept);
+    const lines = [];
+    if (r.added.length) lines.push(`✅ *Mulai dipantau:* ${r.added.map((u) => '@' + u).join(', ')}\n_Cek pertama berjalan dalam ±1 hari (bergiliran). Kabarnya dikirim ke chat ini._`);
+    if (r.already.length) lines.push(`ℹ️ Sudah kamu pantau: ${r.already.map((u) => '@' + u).join(', ')}`);
+    if (r.taken.length) lines.push(`⚠️ Sudah dipantau member lain: ${r.taken.map((u) => '@' + u).join(', ')} (hubungi admin kalau itu akunmu)`);
+    if (r.full.length) lines.push(`⚠️ Tidak ditambahkan (batas ${store.MAX_PER_MEMBER} akun per member, atau kuota penuh): ${r.full.map((u) => '@' + u).join(', ')}`);
+    if (rejected.length) lines.push(`❌ *Tidak bisa dipantau:*\n${rejected.map((x) => '• ' + x).join('\n')}`);
+    if (bad.length) lines.push(`⚠️ Bukan username valid: ${bad.join(', ')}`);
+    if (!cek && r.added.length) lines.push('_Username belum bisa dicek ke X sekarang; kalau salah ketik, akan ketahuan saat cek pertama._');
+    return lines.join('\n\n') || '_Tidak ada perubahan._';
+}
+
+export async function isCommunity(sock, who) {
+  return Boolean((await findMember(sock, who).catch(() => null)) || (await findCommunityMember(sock, who)));
 }
 
 async function handle(sock, messageInfo) {
@@ -66,44 +106,20 @@ async function handle(sock, messageInfo) {
 
     if (!args) {
       const list = store.mine(data, who);
+      // sesi lain jangan sampai menangkap username yang dikirim berikutnya
+      clearKiwSession(messageInfo);
+      closeSession(messageInfo);
+      store.openSession(messageInfo);
       return send(
         '🔔 *Pantau Shadowban — akun konten*\n\n' +
-        (list.length ? `Akun yang kamu pantau (${list.length}/${store.MAX_PER_MEMBER}):\n` + list.map((a, i) => `${i + 1}. @${a.username}`).join('\n') : 'Kamu belum memantau akun apa pun.') +
-        `\n\nTambah: *${p}pantau akun1 akun2* (boleh sekaligus, maks. ${store.MAX_PER_MEMBER})\nHapus: *${p}unpantau 1*\n\n` +
-        '_SinyalTren mengecek akunmu setiap hari (cek lengkap tiap minggu). Kalau terdeteksi shadowban atau sudah pulih, kabarnya dikirim ke chat ini._',
+        (list.length ? `Akun yang kamu pantau (${list.length}/${store.MAX_PER_MEMBER}):\n` + list.map((a, i) => `${i + 1}. @${a.username}`).join('\n') + '\n\n' : '') +
+        `Kirim *username akun konten* yang mau dipantau sekarang, pisahkan dengan spasi atau baris baru (maks. ${store.MAX_PER_MEMBER} akun).\n` +
+        'Contoh:\nakunkonten1\nakunkonten2\n\n' +
+        `_Ketik langsung tanpa titik. Ketik *batal* untuk membatalkan. Sesi 10 menit._\nHapus akun: *${p}unpantau 1*`,
       );
     }
 
-    const { ok, bad } = store.parseUsernames(args);
-    if (!ok.length) return send(`Tulis username akun X-nya, boleh beberapa sekaligus.\nContoh: *${p}pantau akunkonten1 akunkonten2*` + (bad.length ? `\n\n⚠️ Bukan username valid: ${bad.join(', ')}` : ''));
-
-    // Cek ke X: username salah ketik / tidak ada / suspend / dikunci langsung ketahuan
-    const fresh = ok.filter((u) => !data.accounts[u]);
-    let cek = null;
-    for (let i = 0; i < fresh.length; i += 10) { // SinyalTren menerima maks. 10 username per permintaan
-      const part = await checkX(fresh.slice(i, i + 10));
-      if (part) cek = { ...(cek || {}), ...part };
-    }
-    const rejected = [];
-    const accept = [];
-    for (const u of ok) {
-      const c = cek?.[u];
-      if (!c || c.status === 'ok' || c.status === 'error') { accept.push(u); continue; }
-      if (c.status === 'not_found') rejected.push(`@${u} — tidak ditemukan di X (salah ketik? ganti nama?)`);
-      else if (c.status === 'suspended') rejected.push(`@${u} — akun ini sedang di-suspend X`);
-      else if (c.status === 'protected') rejected.push(`@${u} — akun digembok (protected), shadowban tidak bisa dicek`);
-      else rejected.push(`@${u} — akun tidak tersedia di X${c.reason ? ` (${c.reason})` : ''}`);
-    }
-    const r = store.add(who, pushName, accept);
-    const lines = [];
-    if (r.added.length) lines.push(`✅ *Mulai dipantau:* ${r.added.map((u) => '@' + u).join(', ')}\n_Cek pertama berjalan dalam ±1 hari (bergiliran). Kabarnya dikirim ke chat ini._`);
-    if (r.already.length) lines.push(`ℹ️ Sudah kamu pantau: ${r.already.map((u) => '@' + u).join(', ')}`);
-    if (r.taken.length) lines.push(`⚠️ Sudah dipantau member lain: ${r.taken.map((u) => '@' + u).join(', ')} (hubungi admin kalau itu akunmu)`);
-    if (r.full.length) lines.push(`⚠️ Tidak ditambahkan (batas ${store.MAX_PER_MEMBER} akun per member, atau kuota penuh): ${r.full.map((u) => '@' + u).join(', ')}`);
-    if (rejected.length) lines.push(`❌ *Tidak bisa dipantau:*\n${rejected.map((x) => '• ' + x).join('\n')}`);
-    if (bad.length) lines.push(`⚠️ Bukan username valid: ${bad.join(', ')}`);
-    if (!cek && r.added.length) lines.push('_Username belum bisa dicek ke X sekarang; kalau salah ketik, akan ketahuan saat cek pertama._');
-    return send(lines.join('\n\n') || '_Tidak ada perubahan._');
+    return send(await registerPantau(messageInfo, who, args, p));
   } catch (e) {
     console.error('[pantau]', e.message);
     return send('_⚠️ Fitur pantau sedang bermasalah, coba lagi nanti._');

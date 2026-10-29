@@ -1,6 +1,7 @@
 // Pendataan akun X oleh member, lewat chat pribadi dengan bot.
 import { mg, whoIs, openSession, registerFromText } from '../../lib/memberGuard.js';
 import { clearKiwSession } from '../../lib/kiwSession.js';
+import { closeSession as closePantauSession } from '../../lib/pantauStore.js';
 
 const ONLY_PRIVATE = '_⚠️ Pendataan akun X dilakukan lewat *chat pribadi* ke bot ini._';
 
@@ -16,6 +17,7 @@ async function handle(sock, messageInfo) {
       if (!args) {
         // sesi lain (mis. .kiw) yang masih terbuka jangan sampai menangkap username yang dikirim berikutnya
         clearKiwSession(messageInfo);
+        closePantauSession(messageInfo);
         openSession(messageInfo);
         return send(
           '*Pendataan Akun X*\n\n' +
