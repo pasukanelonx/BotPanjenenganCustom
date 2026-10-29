@@ -3,6 +3,7 @@
 // .pantau user1 user2    → tambah (maks. PANTAU_MAX_PER_MEMBER akun per member)
 // .unpantau 2 / username → berhenti memantau
 // .pantau semua          → (admin) jumlah & daftar akun yang dipantau
+// Semua perintah dipakai lewat chat pribadi (khusus anggota grup pantau), demi privasi.
 import { whoIs, groupMeta, matchP, isMgAdmin } from '../../lib/memberGuard.js';
 import * as store from '../../lib/pantauStore.js';
 
@@ -26,11 +27,17 @@ async function handle(sock, messageInfo) {
   try {
     if (!groupJid()) return send('_⚠️ Fitur pantau belum diatur admin (PANTAU_GROUP_JID kosong)._');
     const who = await whoIs(sock, messageInfo);
-    const here = isGroup ? remoteJid === groupJid() : await inPantauGroup(sock, who);
-    if (!here) {
-      return send('_🔔 Pantau akun hanya bisa dipakai di *grup Pantau Shadowban*, atau lewat chat pribadi kalau kamu sudah bergabung di grup itu. Minta link grupnya ke admin._');
-    }
     const args = (content || '').trim();
+    if (isGroup) {
+      // Demi privasi, pendaftaran hanya lewat chat pribadi. Pesan berisi username dihapus bila bot admin grup.
+      if (args && args.toLowerCase() !== 'semua') {
+        try { await sock.sendMessage(remoteJid, { delete: message.key }); } catch {}
+      }
+      return send('🔒 Demi privasi, daftarkan akun konten lewat *chat pribadi ke bot*, bukan di grup.\nKetik di chat pribadi: *' + p + 'pantau usernamemu*');
+    }
+    if (!(await inPantauGroup(sock, who))) {
+      return send('_🔔 Pantau akun konten khusus untuk anggota *grup Pantau Shadowban*. Gabung dulu ke grup itu (minta link ke admin), lalu ketik lagi di sini._');
+    }
     const data = store.load();
 
     if (command === 'unpantau') {
