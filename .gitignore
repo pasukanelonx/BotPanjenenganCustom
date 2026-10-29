@@ -18,3 +18,5 @@ database/bot.db-shm
 database/_json_backup/
 database/grup_join.json
 database/grup_join.json.tmp
+database/pantau.json
+database/pantau.json.tmp
