@@ -2,8 +2,9 @@
 // .pantau                → lihat akun konten yang kamu pantau, lalu bot menunggu username (sesi 10 menit)
 // .pantau user1 user2 …  → tambah (maks. PANTAU_MAX_PER_MEMBER akun per member, bawaan 30)
 // .unpantau 2 / username → berhenti memantau
-// .pantau semua          → (admin) jumlah & daftar akun yang dipantau
+// .pantau semua          → (admin) rekap status semua akun yang dipantau
 // .pantau cek [user …]   → cek lengkap sekarang (maks. 5 akun; admin boleh akun siapa pun)
+// .pantau cek semua      → (admin) jadwalkan cek lengkap semua akun lewat antrean SinyalTren
 // Syarat: anggota grup member / komunitas. Notifikasi perubahan status dikirim lewat chat pribadi.
 // Username dicek ke X lewat SinyalTren (SINYALTREN_URL + SINYALTREN_TOKEN = ADMIN_TOKEN SinyalTren) bila diatur.
 import { whoIs, findMember, findCommunityMember, isMgAdmin, closeSession } from '../../lib/memberGuard.js';
@@ -95,6 +96,44 @@ async function checkNow(username) {
   }
 }
 
+/** Status pantau banyak akun dari SinyalTren; queue=true menjadwalkan cek lengkap secepatnya (bergiliran). */
+async function bulkStatus(usernames, queue = false) {
+  if (!ST_TOKEN) return { error: 'no_token' };
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 30000);
+    const r = await fetch(`${ST_URL}/api/admin/pantau-status`, {
+      method: 'POST', headers: { 'x-admin-token': ST_TOKEN, 'content-type': 'application/json' },
+      body: JSON.stringify({ usernames, queue }), signal: ctl.signal,
+    });
+    clearTimeout(t);
+    if (!r.ok) return { error: `HTTP ${r.status}` };
+    return await r.json();
+  } catch (e) {
+    return { error: e.name === 'AbortError' ? 'waktu habis' : e.message };
+  }
+}
+
+const ago = (ts) => {
+  if (!ts) return 'belum pernah';
+  const m = Math.round((Date.now() / 1000 - ts) / 60);
+  return m < 60 ? `${m} mnt lalu` : m < 48 * 60 ? `${Math.round(m / 60)} jam lalu` : `${Math.round(m / 1440)} hari lalu`;
+};
+
+function fmtBulk(all, res) {
+  const acc = res.accounts || {};
+  const restricted = all.filter((u) => acc[u]?.verdict === 'RESTRICTED');
+  const gone = all.filter((u) => ['SUSPENDED', 'NOT_FOUND', 'UNAVAILABLE', 'PROTECTED', 'NO_TWEETS'].includes(acc[u]?.verdict));
+  const pending = all.filter((u) => acc[u]?.status === 'ok' && !acc[u]?.verdict);
+  const missing = all.filter((u) => acc[u]?.status !== 'ok');
+  const clear = all.filter((u) => acc[u]?.verdict === 'CLEAR');
+  const lines = [`*Akun konten dipantau: ${all.length}*`, `✅ Aman: ${clear.length} · ⚠️ Terbatas: ${restricted.length} · ⛔ Tidak tersedia: ${gone.length} · ⏳ Belum dicek: ${pending.length + missing.length}`];
+  if (restricted.length) lines.push('', '⚠️ *Terbatas:*', ...restricted.map((u) => `• @${u} — ${(acc[u].banned || []).map((k) => TEST_LABEL[k] || k).join(', ') || 'pembatasan'} (cek ${ago(acc[u].last_full)})`));
+  if (gone.length) lines.push('', '⛔ *Tidak tersedia:*', ...gone.map((u) => `• @${u} — ${VERDICT_TEXT[acc[u].verdict]?.replace(/^\S+\s/, '') || acc[u].verdict}`));
+  if (missing.length) lines.push('', `⏳ Belum masuk daftar SinyalTren: ${missing.map((u) => '@' + u).join(', ')}`);
+  return lines.join('\n');
+}
+
 function fmtCheck(u, r) {
   if (r.status === 'not_monitored') return `@${u}\n_Belum masuk daftar pantau SinyalTren (daftar disinkronkan berkala). Coba lagi ±10 menit lagi._`;
   if (r.status === 'no_token') return `@${u}\n_SinyalTren belum tersambung ke bot (SINYALTREN_TOKEN kosong)._`;
@@ -138,6 +177,18 @@ async function handle(sock, messageInfo) {
         (r.notMine.length ? `\n⚠️ Bukan akunmu: ${r.notMine.map((u) => '@' + u).join(', ')}` : ''));
     }
 
+    if (/^cek\s+semua$/i.test(args)) {
+      // (admin) jadwalkan cek lengkap SEMUA akun pantau lewat antrean SinyalTren (bergiliran, hemat akun X)
+      if (!(await isMgAdmin(sock, messageInfo, who).catch(() => false))) return send('_Hanya admin._');
+      const all = Object.keys(data.accounts).sort();
+      if (!all.length) return send('_Belum ada akun yang dipantau._');
+      const res = await bulkStatus(all, true);
+      if (res.error) return send(res.error === 'no_token' ? '_SinyalTren belum tersambung ke bot (SINYALTREN_TOKEN kosong)._' : `_⚠️ SinyalTren tidak bisa dihubungi (${res.error})._`);
+      if (!res.enabled) return send('_⚠️ Pantau di SinyalTren sedang mati (MONITOR_ENABLED=0), antrean tidak akan berjalan._');
+      const eta = Math.ceil((res.waiting * ((res.gap_sec || 75) + 60)) / 60);
+      return send(`🔁 *Cek ulang semua akun pantau dijadwalkan*\n${res.queued} akun baru masuk antrean, total menunggu ${res.waiting} akun.\nCek berjalan bergiliran (1 akun tiap ±${(res.gap_sec || 75) + 60} detik), perkiraan selesai ±${eta >= 90 ? Math.round(eta / 60) + ' jam' : eta + ' menit'}.\n\nPemilik akun dapat kabar kalau statusnya berubah. Lihat rekap kapan saja: *${p}pantau semua*`);
+    }
+
     if (/^cek\b/i.test(args)) {
       // .pantau cek            -> cek lengkap sekarang semua akunmu (maks. 5)
       // .pantau cek user1 …    -> akun tertentu (milikmu; admin boleh akun siapa pun)
@@ -164,7 +215,9 @@ async function handle(sock, messageInfo) {
     if (args.toLowerCase() === 'semua') {
       if (!(await isMgAdmin(sock, messageInfo, who).catch(() => false))) return send('_Hanya admin._');
       const all = Object.keys(data.accounts).sort();
-      return send(`*Akun konten dipantau: ${all.length}/${store.MAX_TOTAL}*\n` + (all.map((u) => '@' + u).join(', ') || '-'));
+      const res = all.length ? await bulkStatus(all, false) : { accounts: {} };
+      if (res.error) return send(`*Akun konten dipantau: ${all.length}/${store.MAX_TOTAL}*\n` + (all.map((u) => '@' + u).join(', ') || '-') + `\n\n_Status dari SinyalTren tidak bisa diambil (${res.error === 'no_token' ? 'SINYALTREN_TOKEN kosong' : res.error})._`);
+      return send(fmtBulk(all, res) + `\n\n_Cek ulang semua: *${p}pantau cek semua* · satu akun: *${p}pantau cek username*_`);
     }
 
     if (!args) {
