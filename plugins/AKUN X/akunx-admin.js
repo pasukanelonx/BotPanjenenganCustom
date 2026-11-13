@@ -349,22 +349,25 @@ async function handle(sock, messageInfo) {
         // .mgrtn              -> ranking RTN 14 hari; di grup WA: hanya tab grup XChat pasangannya
         // .mgrtn 30           -> 30 hari
         // .mgrtn 30 jngrl     -> grup tertentu (atau: semua)
+        // .mgrtn 14 notag     -> tanpa tag pemilik akun
         let days = 14;
         let keysArg = null;
         let all = false;
+        let tag = true;
         const xk = cfg.xGroupKeys || [];
         for (const a of args) {
           const al = a.toLowerCase();
-          if (/^\d{1,2}$/.test(al)) days = Number(al);
+          if (al === 'notag' || al === 'tanpatag') tag = false;
+          else if (/^\d{1,2}$/.test(al)) days = Number(al);
           else if (xk.includes(al)) keysArg = [...(keysArg || []), al];
           else if (al === 'semua' || al === 'all') all = true;
-          else return send(`*Ranking RTN terbanyak*\n${prefix}mgrtn — 14 hari terakhir\n${prefix}mgrtn 30 — 30 hari\n${prefix}mgrtn 14 jngrl — grup tertentu (atau: semua)`);
+          else return send(`*Ranking RTN terbanyak* (pemilik akun di-tag)\n${prefix}mgrtn — 14 hari terakhir\n${prefix}mgrtn 30 — 30 hari\n${prefix}mgrtn 14 jngrl — grup tertentu (atau: semua)\n${prefix}mgrtn 14 notag — tanpa tag pemilik`);
         }
         const sc = all || keysArg ? null : scopeOf(cfg, remoteJid, isGroup, '');
         const keys = keysArg || (sc ? sc.keys : null);
         await send(`⏳ Menghitung RTN ${days} hari terakhir…`);
-        const r = await core.absenRank(days, keys, 'RTN');
-        return send(r?.text || `❌ ${r?.error || 'gagal'}`);
+        const r = await core.absenRank(days, keys, 'RTN', tag);
+        return send(r?.text || `❌ ${r?.error || 'gagal'}`, r?.mentions || []);
       }
 
       case 'mgabsen': {
